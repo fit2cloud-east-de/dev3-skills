@@ -64,7 +64,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **数据集：** 确认数据源与文件夹 → `tables` → `fields`/`classify` →（可选 ops）→ `preview` → `create`。  
 
-**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog` 选图与装饰 → 写 plan → `preview-chart` 或 `apply` → `get` 核对 → 用户确认后 `publish`。命令见 [examples/datav.md](examples/datav.md)。
+**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版（`grid_3x4` 平均分布 3×4 或 `center_v2` 居中结构）→ 写 plan（`layout` + 各槽图表）→ `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
 
 ## 范围外
 

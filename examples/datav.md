@@ -6,14 +6,18 @@ export DE_BASE_URL=... DE_ACCESS_KEY=... DE_SECRET_KEY=...
 export DE_ALLOWED_WRITE_SCOPE=<数据源组织根>,<数据集组织根>,<大屏组织根>
 ```
 
-## 选型与字段
+## 选型、布局与字段
 
 ```bash
 python datav.py catalog
+python datav.py layouts
+python datav.py layouts --id center_v2
 python datav.py datasets --flat
 python datav.py fields --dataset-id <DATASET_ID> --simplify
 python datav.py resolve-folder --name "目标文件夹"
 ```
+
+布局模板：`grid_3x4`（平均分布 3×4）、`center_v2`（居中结构-形式二）。内容槽可放任意图表。
 
 ## 单图预览（保存前）
 
@@ -24,14 +28,14 @@ python datav.py preview-chart \
   --y-axis '[{"name":"销售量","summary":"sum"}]'
 ```
 
-## 一键按 plan 新建
+## 一键按 plan 新建（推荐带布局模板）
 
 ```bash
-python datav.py plan-example > /tmp/plan.json
-# 编辑 plan：folderName、datasetId、字段名、布局
-python datav.py apply --file /tmp/plan.json
+python datav.py plan-example --layout grid_3x4 > plan.json
+# 或：python datav.py plan-example --layout center_v2 > plan.json
+# 编辑：folderName、datasetId、各槽 type/轴字段；可不写像素
+python datav.py apply --file plan.json
 python datav.py get --id <返回的大屏ID> --summary
-# 未发布时请看 snapshot（get 默认）；发布到正式预览：
 python datav.py publish --id <DV_ID> --i-confirm-publish
 ```
 

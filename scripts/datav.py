@@ -27,6 +27,7 @@ from datav_defaults import (
     default_canvas_style,
     user_view_component,
 )
+from datav_layouts import all_layouts, apply_template_to_plan, get_layout
 from datasource import (
     _assert_within_write_scope,
     _load_tree_index,
@@ -56,20 +57,44 @@ def _resolve_datav_pid(client: DataEaseClient, args: argparse.Namespace) -> str:
 
 
 def cmd_catalog(client: DataEaseClient, _args: argparse.Namespace) -> None:
+    layouts = [
+        {
+            "id": m["id"],
+            "name": m["name"],
+            "aliases": m.get("aliases"),
+            "description": m.get("description"),
+            "contentSlots": m.get("contentSlots"),
+            "titleSlot": m.get("titleSlot"),
+        }
+        for m in all_layouts()
+    ]
     _print_json(
         {
             "charts": [
                 {"type": k, **v} for k, v in CHART_TYPES.items() if v.get("category") != "other" or k == "rich-text"
             ],
             "decorations": [{"kind": k, **v} for k, v in DECORATION_KINDS.items()],
+            "layouts": layouts,
             "summaries": list(SUMMARY_OPTIONS),
             "notes": [
                 "大屏画布默认 1920×1080 暗色；组件用 style.left/top/width/height（像素）",
+                "布局模板：grid_3x4（平均分布 3×4）、center_v2（居中结构-形式二）；plan 设 layout 后自动填槽位",
                 "UserView 的 id 必须与 canvasViewInfo 的 key 一致",
                 "聚合 summary 配在指标字段上，不是图表顶层",
             ],
         }
     )
+
+
+def cmd_layouts(_client: DataEaseClient, args: argparse.Namespace) -> None:
+    if args.id or args.name:
+        try:
+            tpl = get_layout(args.id or args.name)
+        except ValueError as e:
+            raise DataEaseClientError(str(e)) from e
+        _print_json(tpl)
+        return
+    _print_json(all_layouts())
 
 
 def cmd_tree(client: DataEaseClient, args: argparse.Namespace) -> None:
@@ -439,7 +464,13 @@ def _layout(item: dict, defaults: tuple[int, int, int, int]) -> tuple[int, int, 
 
 
 def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tuple[list, dict, dict]:
-    """返回 (componentData_list, canvasViewInfo, canvasStyle overlay)."""
+    """返回 (componentData_list, canvasViewInfo, canvasStyle overlay)。plan 宜已 apply_template_to_plan。"""
+    if plan.get("_resolvedLayout"):
+        print(
+            f"layout={plan['_resolvedLayout'].get('id')} ({plan['_resolvedLayout'].get('name')})",
+            file=sys.stderr,
+        )
+
     components: list = []
     views: dict = {}
     canvas_over = plan.get("canvas") or {}
@@ -526,6 +557,10 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
     plan = _load_json(args.json, args.file)
     if not isinstance(plan, dict):
         raise DataEaseClientError("apply 需要 --file/--json 计划对象")
+    try:
+        plan = apply_template_to_plan(plan)
+    except ValueError as e:
+        raise DataEaseClientError(str(e)) from e
 
     dv_id = args.id or plan.get("id")
     current: Optional[dict] = None
@@ -623,6 +658,7 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
             "id": str(scene_id),
             "name": name,
             "pid": pid,
+            "layout": (plan.get("_resolvedLayout") or {}).get("id"),
             "charts": len(plan.get("charts") or []),
             "decorations": len(plan.get("decorations") or []),
             "result": result,
@@ -630,60 +666,68 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
     )
 
 
-def cmd_plan_example(_client: DataEaseClient, _args: argparse.Namespace) -> None:
+def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
+    layout = getattr(args, "layout", None) or "grid_3x4"
+    if layout in ("free", "none", "manual"):
+        _print_json(
+            {
+                "name": "销售运营大屏",
+                "folderName": "目标文件夹",
+                "datasetId": "<DATASET_ID>",
+                "canvas": {"backgroundColor": "#020408", "width": 1920, "height": 1080},
+                "charts": [
+                    {
+                        "type": "bar",
+                        "title": "示例图",
+                        "xAxis": ["省份"],
+                        "yAxis": [{"name": "销售量", "summary": "sum"}],
+                        "layout": {"left": 40, "top": 120, "width": 900, "height": 400},
+                    }
+                ],
+            }
+        )
+        return
+    try:
+        tpl = get_layout(layout)
+    except ValueError as e:
+        raise DataEaseClientError(str(e)) from e
+    charts = []
+    # 居中结构：主槽优先柱/地图类；平均分布：轮换常见图
+    if tpl["id"] == "center_v2":
+        sample_types = ["bar", "indicator", "pie", "line", "table-info", "bar"]
+    else:
+        sample_types = ["indicator", "bar", "pie", "line", "table-info", "bar"]
+    for i, slot in enumerate(tpl["contentSlots"]):
+        charts.append(
+            {
+                "slot": slot,
+                "type": sample_types[i % len(sample_types)],
+                "title": f"内容-{slot}",
+                "datasetId": "<DATASET_ID>",
+                "xAxis": ["省份"] if sample_types[i % len(sample_types)] != "indicator" else None,
+                "yAxis": [{"name": "销售量", "summary": "sum"}],
+            }
+        )
+    for ch in charts:
+        if ch["type"] == "indicator":
+            ch.pop("xAxis", None)
+        if ch["type"] == "table-info":
+            ch["xAxis"] = ["省份", "销售量"]
+            ch.pop("yAxis", None)
     _print_json(
         {
-            "name": "销售运营大屏",
-            "folderName": "AI专用组织",
-            "datasetId": "<默认数据集，可被单图覆盖>",
+            "name": "模板大屏示例",
+            "title": "大标题",
+            "folderName": "目标文件夹",
+            "layout": tpl["id"],
+            "datasetId": "<DATASET_ID>",
             "canvas": {"backgroundColor": "#020408", "width": 1920, "height": 1080},
-            "decorations": [
-                {
-                    "kind": "ScrollText",
-                    "text": "销售运营监控大屏",
-                    "layout": {"left": 60, "top": 24, "width": 800, "height": 64},
-                    "style": {"fontSize": 36, "color": "#ffffff", "fontWeight": 700},
-                },
-                {
-                    "kind": "RectShape",
-                    "layout": {"left": 0, "top": 0, "width": 1920, "height": 96},
-                    "style": {"backgroundColor": "rgba(16,148,229,0.25)", "opacity": 0.9},
-                },
-            ],
-            "charts": [
-                {
-                    "type": "indicator",
-                    "title": "销售量合计",
-                    "datasetId": "<DATASET_ID>",
-                    "yAxis": [{"name": "销售量", "summary": "sum"}],
-                    "layout": {"left": 60, "top": 120, "width": 420, "height": 220},
-                },
-                {
-                    "type": "bar",
-                    "title": "各省销售量",
-                    "datasetId": "<DATASET_ID>",
-                    "xAxis": ["省份"],
-                    "yAxis": [{"name": "销售量", "summary": "sum"}],
-                    "layout": {"left": 520, "top": 120, "width": 880, "height": 420},
-                    "customFilter": {},
-                },
-                {
-                    "type": "pie",
-                    "title": "曝光类型占比",
-                    "datasetId": "<DATASET_ID>",
-                    "xAxis": ["曝光类型"],
-                    "yAxis": [{"name": "销售量", "summary": "sum"}],
-                    "layout": {"left": 1420, "top": 120, "width": 440, "height": 420},
-                },
-                {
-                    "type": "line",
-                    "title": "按统计日期趋势",
-                    "datasetId": "<DATASET_ID>",
-                    "xAxis": ["统计日期"],
-                    "yAxis": [{"name": "销售量", "summary": "sum"}],
-                    "layout": {"left": 60, "top": 580, "width": 1340, "height": 420},
-                },
-            ],
+            "charts": charts,
+            "_layoutMeta": {
+                "name": tpl["name"],
+                "contentSlots": tpl["contentSlots"],
+                "hint": "指定 layout 后可不写像素；也可用 slot 指定落入哪一格",
+            },
         }
     )
 
@@ -692,7 +736,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="DataEase V3 数据大屏 dataV CLI")
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("catalog", help="图表类型与装饰组件清单").set_defaults(func=cmd_catalog)
+    sub.add_parser("catalog", help="图表类型、装饰与布局模板清单").set_defaults(func=cmd_catalog)
+
+    ly = sub.add_parser("layouts", help="列出或查看布局模板槽位像素")
+    ly.add_argument("--id", default=None, help="grid_3x4 / center_v2")
+    ly.add_argument("--name", default=None, help="中文名如 平均分布3x4 / 居中结构")
+    ly.set_defaults(func=cmd_layouts)
 
     t = sub.add_parser("tree", help="数据大屏资源树")
     t.add_argument("--name", default=None)
@@ -764,7 +813,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--append", action="store_true", help="追加组件而非整页替换")
     ap.set_defaults(func=cmd_apply)
 
-    sub.add_parser("plan-example", help="打印 plan JSON 示例").set_defaults(func=cmd_plan_example)
+    pe = sub.add_parser("plan-example", help="打印 plan JSON 示例")
+    pe.add_argument(
+        "--layout",
+        default="grid_3x4",
+        help="grid_3x4 | center_v2 | free（手写像素）",
+    )
+    pe.set_defaults(func=cmd_plan_example)
 
     return p
 
@@ -773,20 +828,9 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        # plan-example 可不连后端
-        if args.command == "plan-example":
+        offline = {"plan-example", "catalog", "layouts"}
+        if args.command in offline:
             args.func(None, args)  # type: ignore[arg-type]
-            return 0
-        if args.command == "catalog":
-            # catalog 也可离线
-            try:
-                client = DataEaseClient()
-            except DataEaseClientError:
-                client = None  # type: ignore
-            if client is None:
-                cmd_catalog(None, args)  # type: ignore[arg-type]
-            else:
-                args.func(client, args)
             return 0
         client = DataEaseClient()
         args.func(client, args)

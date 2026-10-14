@@ -15,12 +15,26 @@
 
 ## 工作流
 
-1. `catalog` — 当前支持的图表类型与装饰组件  
+1. `catalog` / `layouts` — 图表类型、装饰与**排版模板**  
 2. `resolve-folder` — 在 **数据大屏树** 上定位文件夹（组织根 id 与数据源/数据集树通常不同）  
 3. `datasets` + `fields --simplify` — 选型与字段  
-4. 按需求拆解：选图类型、轴字段、聚合、过滤、布局与点缀  
-5. `plan-example` 作模板 → 写 plan JSON → `apply`（可先 `preview-chart`）  
-6. `get --resource-table snapshot`（默认）核对编辑稿；`publish --i-confirm-publish` 同步到正式预览（`core`）
+4. 按需求拆解：选布局模板 → 选图类型、轴字段、聚合、过滤 → 填入各内容槽  
+5. `plan-example --layout grid_3x4|center_v2` → 写 plan → `apply`（可先 `preview-chart`）  
+6. `get --resource-table snapshot`（默认）核对；`publish --i-confirm-publish` 发布  
+
+## 排版模板（优先使用）
+
+默认画布 1920×1080。plan 中设 `layout`（或 `layoutTemplate`）后，未手写像素的图表按槽位自动排版；内容槽可放**任意图表 / 表格 / 指标卡**等。
+
+| id | 名称 | 结构 |
+|----|------|------|
+| `grid_3x4` | 平均分布 3×4 | 顶栏大标题 + **3 行 × 4 列** 共 12 个等大内容格（`c0`…`c11`） |
+| `center_v2` | 居中结构-形式二 | 顶栏大标题 + **中央主内容** `main` + 左右各 2 次要 + 主内容下方 1 次要 |
+
+- `title` / `name`：自动生成标题槽 `ScrollText`（可用 `decorations` 里 `slot:"title"` 覆盖）  
+- `charts[].slot`：指定落入哪一格；省略则按模板 `contentSlots` 顺序填充  
+- 仍可手写 `layout:{left,top,width,height}` 覆盖单格  
+- 查看像素：`python datav.py layouts --id grid_3x4`
 
 ## 画布与组件
 
@@ -52,27 +66,29 @@
 ```json
 {
   "name": "销售运营大屏",
+  "title": "大标题文案",
   "folderName": "目标文件夹",
+  "layout": "grid_3x4",
   "datasetId": "可选默认数据集",
   "canvas": { "backgroundColor": "#020408" },
-  "decorations": [
-    { "kind": "ScrollText", "text": "标题", "layout": { "left": 60, "top": 24, "width": 800, "height": 64 } }
-  ],
   "charts": [
     {
+      "slot": "c0",
       "type": "bar",
       "title": "各省销量",
-      "datasetId": "<ID>",
       "xAxis": ["省份"],
-      "yAxis": [{ "name": "销售量", "summary": "sum" }],
-      "layout": { "left": 40, "top": 120, "width": 900, "height": 400 },
-      "customFilter": {}
+      "yAxis": [{ "name": "销售量", "summary": "sum" }]
+    },
+    {
+      "slot": "main",
+      "type": "map",
+      "title": "主视觉（居中结构时用）"
     }
   ]
 }
 ```
 
-`apply` 默认整页替换组件；`--append` 在已有大屏上追加。
+`layout: "center_v2"` 时内容槽为 `main`、`secondary_left_top` 等（见 `layouts`）。`apply` 默认整页替换；`--append` 追加。
 
 ## 主要 API
 
