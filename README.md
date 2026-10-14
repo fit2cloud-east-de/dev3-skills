@@ -14,6 +14,14 @@
 | 仪表板 / 数据故事 | 未实现 | — |
 | 插件数据源新建/改配置 | 未实现 | 产品中可能可见；查询仍可用 |
 
+## 数据大屏效果参考
+
+按视觉构图规范生成的居中美化大屏示例（季度销售情况看板）：
+
+![季度销售情况看板效果参考](assets/datav_quarterly_sales_ref.png)
+
+提示词与 plan 见 [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)；构图规则见 [references/datav_visual.md](references/datav_visual.md)。
+
 ## 在 Agent 中使用
 
 1. 将本目录（`dev3-skills/`）作为 Skill 安装或加入工具的 skills 路径（各产品名称可能为 Skill / Custom instruction / Agent skill）。  
@@ -107,6 +115,7 @@ python datav.py catalog
 | 数据源 | [references/datasource.md](references/datasource.md) · [examples/datasource.md](examples/datasource.md) |
 | 数据集 | [references/dataset.md](references/dataset.md) · [examples/dataset.md](examples/dataset.md) |
 | 数据大屏 | [references/datav.md](references/datav.md) · [examples/datav.md](examples/datav.md) |
+| 大屏视觉 / 构图 | [references/datav_visual.md](references/datav_visual.md) · [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md) |
 | Agent 强制规则与工作流 | [SKILL.md](SKILL.md) |
 
 ## 使用约定（摘要）
