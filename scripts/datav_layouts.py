@@ -184,35 +184,33 @@ def apply_template_to_plan(plan: dict) -> dict:
     title_slot = tpl["titleSlot"]
     title_text = out.get("title") or out.get("name") or "数据大屏"
 
-    # 标题装饰：无 decorations 含 title 槽或显式 title 装饰时自动补 ScrollText
+    # 大标题：用富文本（界面「居中对齐」写入 propValue.textValue），不用滚动文字
     decorations = list(out.get("decorations") or [])
-    has_title_dec = any(
-        (d.get("slot") == title_slot)
-        or (d.get("kind") in ("ScrollText", "rich-text") and not (d.get("layout") or {}).get("left") is None and d.get("role") == "title")
-        for d in decorations
-    )
-    # 更稳：若没有任何 slot=title 的装饰，则插入
     if not any(d.get("slot") == title_slot for d in decorations):
         decorations.insert(
             0,
             {
                 "slot": title_slot,
-                "kind": "ScrollText",
+                "kind": "rich-text",
                 "role": "title",
                 "text": title_text,
                 "layout": dict(slots[title_slot]),
-                "style": {
-                    "fontSize": 36,
-                    "color": "#ffffff",
-                    "fontWeight": 700,
-                    "backgroundColor": "transparent",
-                },
+                "fontSize": 36,
+                "color": "#ffffff",
             },
         )
     else:
         for d in decorations:
-            if d.get("slot") == title_slot and not _has_explicit_box(d.get("layout")):
+            if d.get("slot") != title_slot:
+                continue
+            if not _has_explicit_box(d.get("layout")):
                 d["layout"] = dict(slots[title_slot])
+            # 若仍是滚动文字，升级为富文本居中（与产品配置一致）
+            if (d.get("kind") or d.get("component")) == "ScrollText":
+                d["kind"] = "rich-text"
+            d.setdefault("text", title_text)
+            d.setdefault("fontSize", 36)
+            d.setdefault("color", "#ffffff")
     out["decorations"] = decorations
 
     content_slots = list(tpl["contentSlots"])

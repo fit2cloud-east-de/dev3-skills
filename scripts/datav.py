@@ -23,8 +23,10 @@ from datav_defaults import (
     DECORATION_KINDS,
     SUMMARY_OPTIONS,
     base_view_config,
+    chart_render,
     decoration_component,
     default_canvas_style,
+    rich_text_title_component,
     user_view_component,
 )
 from datav_layouts import all_layouts, apply_template_to_plan, get_layout
@@ -285,6 +287,7 @@ def build_chart_view(
     view["sceneId"] = str(scene_id)
     view["tableId"] = str(dataset_id)
     view["type"] = chart_type
+    view["render"] = chart_render(chart_type)
     view["title"] = title
 
     if chart_type == "indicator":
@@ -475,13 +478,58 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
     views: dict = {}
     canvas_over = plan.get("canvas") or {}
 
-    # 装饰先画（底层），图表后叠
+    # 装饰 / 标题先画（底层），图表后叠
     for i, dec in enumerate(plan.get("decorations") or []):
         kind = dec.get("kind") or dec.get("component")
         if not kind:
             raise DataEaseClientError(f"decorations[{i}] 缺少 kind")
         left, top, width, height = _layout(dec, (40 + i * 20, 40, 400, 80))
         cid = str(dec.get("id") or snowflake_id())
+        # 大标题等：富文本（界面居中对齐 → propValue.textValue），会进 canvasViewInfo
+        if kind in ("rich-text", "UserView") and (
+            dec.get("role") == "title" or dec.get("innerType") == "rich-text" or kind == "rich-text"
+        ):
+            text = dec.get("text") or (dec.get("propValue") or {}).get("textValue") or plan.get("title") or "大标题"
+            # 若已带完整 propValue（用户从界面导出），优先原样使用
+            if isinstance(dec.get("propValue"), dict) and dec["propValue"].get("textValue"):
+                comp = user_view_component(
+                    cid=cid,
+                    chart_type="rich-text",
+                    title=str(text)[:40],
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                )
+                comp["name"] = "富文本"
+                comp["label"] = "富文本"
+                comp["icon"] = "rich-text"
+                comp["render"] = "custom"
+                comp["propValue"] = dict(dec["propValue"])
+                comp["propValue"].setdefault("verticalAlign", "center-align")
+                view = base_view_config()
+                view["id"] = cid
+                view["type"] = "rich-text"
+                view["render"] = "custom"
+                view["title"] = str(text)[:40]
+                view["tableId"] = ""
+                view["customStyle"]["text"]["show"] = False
+            else:
+                comp, view = rich_text_title_component(
+                    cid=cid,
+                    text=str(text),
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                    font_size=int(dec.get("fontSize") or 36),
+                    color=str(dec.get("color") or "#ffffff"),
+                )
+            view["sceneId"] = str(scene_id)
+            view["render"] = "custom"
+            components.append(comp)
+            views[cid] = view
+            continue
         components.append(
             decoration_component(
                 cid=cid,
@@ -522,9 +570,12 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
             view["id"] = cid
             view["sceneId"] = str(scene_id)
             view["type"] = "rich-text"
+            view["render"] = "custom"
             view["title"] = title
             view["tableId"] = ""
             views[cid] = view
+            # 组件 render 与界面 getViewConfig 一致
+            components[-1]["render"] = "custom"
         else:
             view = build_chart_view(
                 client,

@@ -31,9 +31,12 @@
 | `grid_3x4` | 平均分布 3×4 | 顶栏大标题 + **3 行 × 4 列** 共 12 个等大内容格（`c0`…`c11`） |
 | `center_v2` | 居中结构-形式二 | 顶栏大标题 + **中央主内容** `main` + 左右各 2 次要 + 主内容下方 1 次要 |
 
-- `title` / `name`：自动生成标题槽 `ScrollText`（可用 `decorations` 里 `slot:"title"` 覆盖）  
+- `title` / `name`：自动生成标题槽 **富文本**（与界面一致：`render=custom`、`propValue.textValue` 含居中 HTML、`verticalAlign=center-align`）；可用 `decorations` 里 `slot:"title"` 覆盖  
+- 图表 `render` 必须与界面 `getViewConfig` 一致：`rich-text` / `indicator` / `picture-group` → `custom`，其余常见图 → `antv`（错误 render 会导致组件不挂载、不可见且无法双击编辑）
+- 勿用滚动文字做大标题居中：产品把对齐存在 `style.textAlign`，但滚动文字渲染不按该字段水平居中  
 - `charts[].slot`：指定落入哪一格；省略则按模板 `contentSlots` 顺序填充  
 - 仍可手写 `layout:{left,top,width,height}` 覆盖单格  
+- 图表 **提示（tooltip）** 默认白底黑字（`color:#000000`），勿改成白字  
 - 查看像素：`python datav.py layouts --id grid_3x4`
 
 ## 画布与组件

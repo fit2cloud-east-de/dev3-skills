@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from html import escape
 from typing import Any, Optional
+
+# 与前端 chart.ts / ChartRenderType 一致：这三类注册在 render=custom 下
+CUSTOM_RENDER_TYPES = frozenset({"rich-text", "picture-group", "indicator"})
+
+
+def chart_render(chart_type: str) -> str:
+    """界面选图表时写入的 render：custom | antv。"""
+    return "custom" if chart_type in CUSTOM_RENDER_TYPES else "antv"
+
 
 # 图表类型：value → (分类, 中文名, 轴约束说明)
 CHART_TYPES: dict[str, dict[str, Any]] = {
@@ -79,7 +89,6 @@ COMMON_BG_DECOR = {
     "innerImage": None,
     "backgroundColor": "rgba(19,28,66,0.6)",
 }
-
 
 def default_canvas_style(*, width: int = 1920, height: int = 1080, background_color: str = "#020408") -> dict:
     return {
@@ -196,7 +205,17 @@ def base_view_config() -> dict:
                 "innerRadius": 60,
             },
             "label": {"show": False, "position": "top", "fontSize": 12, "color": "#ffffff"},
-            "tooltip": {"show": True, "fontSize": 12, "color": "#ffffff"},
+            # 提示框默认白底黑字，勿用白色字（与背景冲突看不见）
+            "tooltip": {
+                "show": True,
+                "trigger": "item",
+                "confine": True,
+                "fontSize": 12,
+                "color": "#000000",
+                "backgroundColor": "#ffffff",
+                "showQuota": False,
+                "seriesTooltipFormatter": [],
+            },
             "misc": {},
             "tableTotal": {},
             "tableHeader": {},
@@ -259,6 +278,23 @@ def base_view_config() -> dict:
     }
 
 
+def rich_text_centered_html(
+    text: str,
+    *,
+    font_size: int = 36,
+    color: str = "#ffffff",
+    bold: bool = True,
+) -> str:
+    """富文本在编辑器点「居中对齐」后写入 propValue.textValue 的典型 HTML。"""
+    inner = escape(text or "")
+    weight = f"<strong>{inner}</strong>" if bold else inner
+    return (
+        f'<p style="text-align: center;">'
+        f'<span style="font-size: {int(font_size)}px; color: {color};">{weight}</span>'
+        f"</p>"
+    )
+
+
 def user_view_component(
     *,
     cid: str,
@@ -276,7 +312,8 @@ def user_view_component(
         "name": meta.get("label") or title,
         "label": meta.get("label") or title,
         "innerType": chart_type,
-        "render": "antv",
+        # 必须与界面 findNewComponentFromList → getViewConfig(innerType).render 一致
+        "render": chart_render(chart_type),
         "propValue": {"textValue": "", "urlList": []},
         "icon": chart_type,
         "editing": False,
@@ -316,6 +353,56 @@ def user_view_component(
     }
 
 
+def rich_text_title_component(
+    *,
+    cid: str,
+    text: str,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    font_size: int = 36,
+    color: str = "#ffffff",
+) -> tuple[dict, dict]:
+    """
+    大标题用「富文本」组件（界面可配居中），而非滚动文字。
+    返回 (componentData 项, canvasViewInfo 项)。
+    """
+    comp = user_view_component(
+        cid=cid,
+        chart_type="rich-text",
+        title=text or "大标题",
+        left=left,
+        top=top,
+        width=width,
+        height=height,
+    )
+    comp["name"] = "富文本"
+    comp["label"] = "富文本"
+    comp["icon"] = "rich-text"
+    comp["render"] = "custom"
+    # 与界面 TinyMCE 保存一致：textValue + verticalAlign（工具栏居中/垂直居中）
+    comp["propValue"] = {
+        "textValue": rich_text_centered_html(text, font_size=font_size, color=color, bold=True),
+        "verticalAlign": "center-align",
+        "urlList": [],
+    }
+    comp["commonBackground"] = {
+        **deepcopy(COMMON_BG_SCREEN),
+        "backgroundColorSelect": False,
+        "backgroundColor": "transparent",
+        "innerImage": None,
+    }
+    view = base_view_config()
+    view["id"] = cid
+    view["type"] = "rich-text"
+    view["render"] = "custom"
+    view["title"] = text or "大标题"
+    view["tableId"] = ""
+    view["customStyle"]["text"]["show"] = False
+    return comp, view
+
+
 def decoration_component(
     *,
     cid: str,
@@ -348,6 +435,17 @@ def decoration_component(
         "borderStyle": "solid",
         "borderColor": "#cccccc",
     }
+    if component == "ScrollText":
+        style.update(
+            {
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "letterSpacing": 0,
+                "padding": 4,
+                "scrollSpeed": 0,
+                "backgroundColor": "transparent",
+            }
+        )
     if style_extra:
         style.update(style_extra)
     pv = prop_value
