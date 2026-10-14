@@ -29,7 +29,7 @@
 | id | 名称 | 结构 |
 |----|------|------|
 | `grid_3x4` | 平均分布 3×4 | 顶栏大标题 + **3 行 × 4 列** 共 12 个等大内容格（`c0`…`c11`） |
-| `center_v2` | 居中结构-形式二 | 顶栏大标题 + **中央主内容** `main` + 左右各 2 次要 + 主内容下方 1 次要 |
+| `center_v2` | 居中结构-形式二 | 顶栏 + **宽主舞台** `main`（约 68% 宽 × 72% 高）+ 左右窄翼 + 底栏扁基座；主槽宜宏大图种 |
 
 - `title` / `name`：自动生成标题槽 **富文本**（与界面一致：`render=custom`、`propValue.textValue` 含居中 HTML、`verticalAlign=center-align`）；可用 `decorations` 里 `slot:"title"` 覆盖  
 - 图表 `render` 必须与界面 `getViewConfig` 一致：`rich-text` / `indicator` / `picture-group` → `custom`，其余常见图 → `antv`（错误 render 会导致组件不挂载、不可见且无法双击编辑）
@@ -39,14 +39,24 @@
 - 图表 **提示（tooltip）** 默认白底黑字（`color:#000000`），勿改成白字  
 - 查看像素：`python datav.py layouts --id grid_3x4`
 
+## 示范案例（居中美化）
+
+「公有云费用看板」类大屏：整屏底图 + 组件 `commonBackground.outerImage`（含 GIF）做边框/动效，图种以环图/树图/折线/横向堆叠条 + 富文本 KPI 为主，并对 `customAttr.basicStyle.colors` 微调。  
+**提示词与 plan 示意：** [examples/datav_showcase_center_beautify.md](../examples/datav_showcase_center_beautify.md)。  
+**资产规则：** AI 用 Python 生成的美化图只落在**用户工作区**（如 `分析区/工作区/generated/`），禁止放进正式 `dev3-skills/`；plan 只引用 URL 或 `/static-resource/...`。
+
 ## 画布与组件
 
 | 概念 | 说明 |
 |------|------|
-| 画布 | 默认 1920×1080 暗色；`canvasStyleData` 为 JSON **字符串** |
+| 画布 | 默认 1920×1080 暗色；`canvasStyleData` 为 JSON **字符串**；氛围图用 `background` + `backgroundImageEnable` |
 | `componentData` | 组件数组的 JSON **字符串**；大屏位置用 `style.left/top/width/height`（像素） |
 | `canvasViewInfo` | **对象**：仅 `UserView` / `VQuery` 需要；key = 组件 `id` |
-| 装饰 | `ScrollText` / `Picture` / `RectShape` / `CanvasBoard` / `DeDecoration` / `CanvasIcon` 等，**不**进 `canvasViewInfo` |
+| 组件美化 | `commonBackground.outerImage` + `backgroundType=outerImage`（边框/光效/动态图，比堆 Picture 更贴产品） |
+| 装饰 | `ScrollText` / `Picture` / `DeVideo` / `RectShape` / `CanvasBoard` 等，**不**进 `canvasViewInfo` |
+| 图片 `Picture` | 界面媒体栏；地址写入 `propValue.url`（plan 可写 `url`）；可选 `adaptation`: `adaptation`/`original`/`equiratio`；`propValue.flip` |
+| 视频 `DeVideo` | 界面媒体栏；地址写入 **`videoLinks.web.src`**（plan 可写 `url`/`src`）；可选 `autoplay`/`loop`/`muted`；**不要**把视频地址写进 `propValue` |
+| 配色微调 | plan 传 `extraView.customAttr.basicStyle`：`colors` / `colorScheme`（如 `elegant`/`future`）/ `gradient`（柱条渐变）/ `alpha`（淡化）；避免经典深纯色堆砌 |
 
 ## 图表轴与聚合（不得出错）
 
@@ -92,6 +102,31 @@
 ```
 
 `layout: "center_v2"` 时内容槽为 `main`、`secondary_left_top` 等（见 `layouts`）。`apply` 默认整页替换；`--append` 追加。
+
+### 图片 / 视频（decorations）
+
+```json
+{
+  "decorations": [
+    {
+      "kind": "Picture",
+      "url": "https://example.com/logo.png",
+      "adaptation": "adaptation",
+      "layout": { "left": 40, "top": 900, "width": 320, "height": 120 }
+    },
+    {
+      "kind": "DeVideo",
+      "url": "https://example.com/demo.mp4",
+      "autoplay": true,
+      "loop": true,
+      "muted": true,
+      "layout": { "left": 1400, "top": 800, "width": 480, "height": 270 }
+    }
+  ]
+}
+```
+
+也可用中文别名 `kind: "图片"` / `"视频"`。完整 `propValue` / `videoLinks`（从界面导出）可原样传入。
 
 ## 主要 API
 

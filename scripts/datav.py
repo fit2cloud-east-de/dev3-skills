@@ -26,6 +26,7 @@ from datav_defaults import (
     chart_render,
     decoration_component,
     default_canvas_style,
+    normalize_decoration_kind,
     rich_text_title_component,
     user_view_component,
 )
@@ -83,6 +84,10 @@ def cmd_catalog(client: DataEaseClient, _args: argparse.Namespace) -> None:
                 "布局模板：grid_3x4（平均分布 3×4）、center_v2（居中结构-形式二）；plan 设 layout 后自动填槽位",
                 "UserView 的 id 必须与 canvasViewInfo 的 key 一致",
                 "聚合 summary 配在指标字段上，不是图表顶层",
+                "图片 Picture：decorations 写 kind=Picture + url（写入 propValue.url）；可选 adaptation",
+                "视频 DeVideo：decorations 写 kind=DeVideo + url（写入 videoLinks.web.src）；勿把地址塞进 propValue",
+                "美化示范：canvas.background + 组件 commonBackground.outerImage；配色用 charts[].extraView；见 examples/datav_showcase_center_beautify.md",
+                "生成的美化图只放用户工作区，禁止写入正式 skill 目录",
             ],
         }
     )
@@ -302,6 +307,27 @@ def build_chart_view(
         view["customAttr"]["label"]["show"] = True
         view["customAttr"]["label"]["position"] = "outer"
         view["customStyle"]["legend"]["show"] = False
+    elif chart_type == "treemap":
+        # 与 Treemap.setupDefaultOptions 一致：开标签（维度名+占比），关图例
+        view["xAxis"] = _pick_fields(idx, x_axis, expect_group="d")
+        view["yAxis"] = _pick_fields(idx, y_axis, expect_group="q", default_summary="sum")[:1]
+        lab = view["customAttr"]["label"]
+        lab["show"] = True
+        lab["showDimension"] = True
+        lab["showQuota"] = False
+        lab["showProportion"] = True
+        lab["reserveDecimalCount"] = 2
+        lab["color"] = "#ffffff"
+        lab["fontSize"] = 12
+        view["customStyle"]["legend"]["show"] = False
+    elif chart_type in ("bar-stack", "bar-stack-horizontal"):
+        view["xAxis"] = _pick_fields(idx, x_axis, expect_group="d")
+        view["yAxis"] = _pick_fields(idx, y_axis, expect_group="q", default_summary="sum")
+        if ext_stack:
+            view["extStack"] = _pick_fields(idx, ext_stack, expect_group="d")
+        elif x_axis_ext:
+            # 兼容误把堆叠维写在 xAxisExt
+            view["extStack"] = _pick_fields(idx, x_axis_ext, expect_group="d")
     else:
         view["xAxis"] = _pick_fields(idx, x_axis, expect_group="d")
         view["yAxis"] = _pick_fields(idx, y_axis, expect_group="q", default_summary="sum")
@@ -480,9 +506,10 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
 
     # 装饰 / 标题先画（底层），图表后叠
     for i, dec in enumerate(plan.get("decorations") or []):
-        kind = dec.get("kind") or dec.get("component")
-        if not kind:
+        kind_raw = dec.get("kind") or dec.get("component")
+        if not kind_raw:
             raise DataEaseClientError(f"decorations[{i}] 缺少 kind")
+        kind = normalize_decoration_kind(str(kind_raw))
         left, top, width, height = _layout(dec, (40 + i * 20, 40, 400, 80))
         cid = str(dec.get("id") or snowflake_id())
         # 大标题等：富文本（界面居中对齐 → propValue.textValue），会进 canvasViewInfo
@@ -527,8 +554,76 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
                 )
             view["sceneId"] = str(scene_id)
             view["render"] = "custom"
+            if isinstance(dec.get("commonBackground"), dict):
+                bg = dict(comp.get("commonBackground") or {})
+                bg.update(dec["commonBackground"])
+                comp["commonBackground"] = bg
             components.append(comp)
             views[cid] = view
+            continue
+        # 图片 / 视频：字段与界面媒体组件一致（不进 canvasViewInfo）
+        if kind == "Picture":
+            media_url = dec.get("url")
+            pv = dec.get("propValue")
+            if not media_url and isinstance(pv, dict):
+                media_url = pv.get("url")
+            elif not media_url and isinstance(pv, str):
+                media_url = pv
+            if not media_url:
+                raise DataEaseClientError(
+                    f"decorations[{i}] Picture 缺少 url（界面「图片」写入 propValue.url）"
+                )
+            components.append(
+                decoration_component(
+                    cid=cid,
+                    kind="Picture",
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                    prop_value=pv if isinstance(pv, dict) else None,
+                    url=str(media_url),
+                    adaptation=dec.get("adaptation") or (dec.get("style") or {}).get("adaptation"),
+                    flip=dec.get("flip"),
+                    style_extra=dec.get("style"),
+                    inner_type=dec.get("innerType") or "Picture",
+                )
+            )
+            continue
+        if kind == "DeVideo":
+            vlinks = dec.get("videoLinks") if isinstance(dec.get("videoLinks"), dict) else None
+            media_url = dec.get("url") or dec.get("src")
+            if not media_url and vlinks:
+                vt = vlinks.get("videoType") or "web"
+                node = vlinks.get(vt)
+                media_url = node.get("src") if isinstance(node, dict) else None
+            pv = dec.get("propValue")
+            if not media_url and isinstance(pv, dict):
+                media_url = pv.get("url") or pv.get("src")
+            if not media_url and isinstance(pv, str):
+                media_url = pv
+            if not media_url:
+                raise DataEaseClientError(
+                    f"decorations[{i}] DeVideo 缺少 url（界面「视频」写入 videoLinks.web.src）"
+                )
+            components.append(
+                decoration_component(
+                    cid=cid,
+                    kind="DeVideo",
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                    url=str(media_url),
+                    video_links=vlinks,
+                    autoplay=dec.get("autoplay"),
+                    loop=dec.get("loop"),
+                    muted=dec.get("muted"),
+                    video_type=dec.get("videoType") or (vlinks or {}).get("videoType"),
+                    style_extra=dec.get("style"),
+                    inner_type=dec.get("innerType") or "DeVideo",
+                )
+            )
             continue
         components.append(
             decoration_component(
@@ -565,6 +660,11 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
                 height=height,
             )
         )
+        # 美化边框等：与界面 commonBackground（outerImage/GIF）一致，禁止臆造字段
+        if isinstance(ch.get("commonBackground"), dict):
+            bg = dict(components[-1].get("commonBackground") or {})
+            bg.update(ch["commonBackground"])
+            components[-1]["commonBackground"] = bg
         if chart_type == "rich-text" and not dataset_id:
             view = base_view_config()
             view["id"] = cid
@@ -589,7 +689,7 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
                 x_axis_ext=ch.get("xAxisExt"),
                 ext_stack=ch.get("extStack"),
                 custom_filter=ch.get("customFilter"),
-                extra_view=ch.get("view"),
+                extra_view=ch.get("extraView") or ch.get("view"),
             )
             if not ch.get("skipPreview"):
                 try:

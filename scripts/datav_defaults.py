@@ -30,6 +30,11 @@ CHART_TYPES: dict[str, dict[str, Any]] = {
     "bar-stack": {"category": "compare", "label": "堆叠柱状图", "axes": "xAxis+yAxis+extStack"},
     "bar-group": {"category": "compare", "label": "分组柱状图", "axes": "xAxis+xAxisExt+yAxis"},
     "bar-horizontal": {"category": "compare", "label": "条形图", "axes": "xAxis(d)+yAxis(q)"},
+    "bar-stack-horizontal": {
+        "category": "compare",
+        "label": "堆叠条形图",
+        "axes": "xAxis(d)+yAxis(q)+extStack",
+    },
     "waterfall": {"category": "compare", "label": "瀑布图", "axes": "xAxis+yAxis"},
     "pie": {"category": "distribute", "label": "饼图", "axes": "xAxis(d)+yAxis(1 指标)"},
     "pie-donut": {"category": "distribute", "label": "环形图", "axes": "xAxis(d)+yAxis(1)"},
@@ -42,10 +47,15 @@ CHART_TYPES: dict[str, dict[str, Any]] = {
     "rich-text": {"category": "other", "label": "富文本", "axes": "可选绑定字段"},
 }
 
-# 装饰/非图表组件（大屏左栏可用）
+# 装饰/非图表组件（大屏左栏「媒体」等；结构对齐 component-list.ts）
 DECORATION_KINDS: dict[str, dict[str, Any]] = {
-    "ScrollText": {"component": "ScrollText", "label": "滚动文字", "needs": "propValue 文本"},
-    "Picture": {"component": "Picture", "label": "图片", "needs": "propValue.url 或 outerImage"},
+    "ScrollText": {"component": "ScrollText", "label": "滚动文字", "needs": "propValue 为字符串文本"},
+    "Picture": {
+        "component": "Picture",
+        "label": "图片",
+        "needs": "propValue.url（可访问的图片 URL）；可选 adaptation=adaptation|original|equiratio",
+        "aliases": ["图片"],
+    },
     "RectShape": {"component": "RectShape", "label": "矩形色块", "needs": "style 背景色"},
     "CircleShape": {"component": "CircleShape", "label": "圆形", "needs": "style"},
     "SvgTriangle": {"component": "SvgTriangle", "label": "三角形", "needs": "style"},
@@ -53,8 +63,52 @@ DECORATION_KINDS: dict[str, dict[str, Any]] = {
     "DeDecoration": {"component": "DeDecoration", "label": "装饰条", "needs": "innerType DeDecoration1..5"},
     "CanvasIcon": {"component": "CanvasIcon", "label": "图标", "needs": "innerType"},
     "DeTimeClock": {"component": "DeTimeClock", "label": "时间器", "needs": "-"},
-    "DeVideo": {"component": "DeVideo", "label": "视频", "needs": "视频地址"},
+    "DeVideo": {
+        "component": "DeVideo",
+        "label": "视频",
+        "needs": "videoLinks.web.src（或 plan 写 url）；默认 videoType=web",
+        "aliases": ["视频", "Video"],
+    },
     "VQuery": {"component": "VQuery", "label": "查询组件", "needs": "propValue 条件 + canvasViewInfo"},
+}
+
+# kind / 中文别名 → 规范 component 名
+DECORATION_ALIASES: dict[str, str] = {
+    "图片": "Picture",
+    "视频": "DeVideo",
+    "Video": "DeVideo",
+    "Picture": "Picture",
+    "DeVideo": "DeVideo",
+}
+
+# 与前端 VIDEO_LINKS_DE2 一致（界面「视频」组件默认）
+VIDEO_LINKS_DE2: dict[str, Any] = {
+    "videoType": "web",
+    "poster": None,
+    "web": {
+        "src": None,
+        "autoplay": True,
+        "muted": True,
+        "loop": True,
+        "preload": "auto",
+        "language": "zh-CN",
+        "fluid": True,
+        "notSupportedMessage": "此视频暂无法播放，请稍后再试",
+        "controls": True,
+        "controlBar": {
+            "timeDivider": True,
+            "remainingTimeDisplay": False,
+            "fullscreenToggle": True,
+        },
+    },
+    "rtmp": {
+        "sources": [{"type": "rtmp/mp4"}],
+        "height": 300,
+        "techOrder": ["flash"],
+        "autoplay": False,
+        "controls": True,
+        "flash": {"hls": {"withCredentials": False}},
+    },
 }
 
 SUMMARY_OPTIONS = (
@@ -89,6 +143,65 @@ COMMON_BG_DECOR = {
     "innerImage": None,
     "backgroundColor": "rgba(19,28,66,0.6)",
 }
+
+# 图片/视频：勿盖色块，与界面新媒体组件常见背景一致
+COMMON_BG_MEDIA = {
+    **COMMON_BG_SCREEN,
+    "backgroundColorSelect": False,
+    "backgroundColor": "transparent",
+    "innerImage": None,
+}
+
+
+def normalize_decoration_kind(kind: str) -> str:
+    """别名归一到 DECORATION_KINDS 的 key / component 名。"""
+    k = (kind or "").strip()
+    if k in DECORATION_ALIASES:
+        return DECORATION_ALIASES[k]
+    if k in DECORATION_KINDS:
+        return k
+    return k
+
+
+def ensure_http_url(url: str) -> str:
+    """对齐界面 checkAddHttp：无协议时补 http://。"""
+    u = (url or "").strip()
+    if not u:
+        return u
+    low = u.lower()
+    if low.startswith("http://") or low.startswith("https://") or low.startswith("//"):
+        return u
+    if low.startswith("data:") or low.startswith("blob:"):
+        return u
+    # 产品内上传路径（如 /xpackComponent/...）原样保留
+    if u.startswith("/"):
+        return u
+    return "http://" + u
+
+
+def default_video_links(
+    *,
+    src: Optional[str] = None,
+    autoplay: Optional[bool] = None,
+    loop: Optional[bool] = None,
+    muted: Optional[bool] = None,
+    video_type: str = "web",
+    video_links: Optional[dict] = None,
+) -> dict:
+    """生成与界面一致的 videoLinks；可传入完整 videoLinks 覆盖。"""
+    links = deepcopy(video_links) if isinstance(video_links, dict) else deepcopy(VIDEO_LINKS_DE2)
+    links.setdefault("videoType", video_type or "web")
+    links.setdefault("poster", None)
+    web = links.setdefault("web", deepcopy(VIDEO_LINKS_DE2["web"]))
+    if src is not None and str(src).strip():
+        web["src"] = ensure_http_url(str(src))
+    if autoplay is not None:
+        web["autoplay"] = bool(autoplay)
+    if loop is not None:
+        web["loop"] = bool(loop)
+    if muted is not None:
+        web["muted"] = bool(muted)
+    return links
 
 def default_canvas_style(*, width: int = 1920, height: int = 1080, background_color: str = "#020408") -> dict:
     return {
@@ -204,7 +317,17 @@ def base_view_config() -> dict:
                 "radius": 90,
                 "innerRadius": 60,
             },
-            "label": {"show": False, "position": "top", "fontSize": 12, "color": "#ffffff"},
+            # 对齐前端 DEFAULT_LABEL；具体图种在 build_chart_view 里按 setupDefaultOptions 打开
+            "label": {
+                "show": False,
+                "position": "top",
+                "fontSize": 12,
+                "color": "#ffffff",
+                "showDimension": True,
+                "showQuota": False,
+                "showProportion": True,
+                "reserveDecimalCount": 2,
+            },
             # 提示框默认白底黑字，勿用白色字（与背景冲突看不见）
             "tooltip": {
                 "show": True,
@@ -414,11 +537,25 @@ def decoration_component(
     prop_value: Any = None,
     style_extra: Optional[dict] = None,
     inner_type: Optional[str] = None,
+    url: Optional[str] = None,
+    video_links: Optional[dict] = None,
+    adaptation: Optional[str] = None,
+    flip: Optional[dict] = None,
+    autoplay: Optional[bool] = None,
+    loop: Optional[bool] = None,
+    muted: Optional[bool] = None,
+    video_type: Optional[str] = None,
 ) -> dict:
-    meta = DECORATION_KINDS.get(kind) or {"component": kind, "label": kind}
+    """
+    构建装饰/媒体组件。Picture / DeVideo 字段与 component-list.ts 保持一致：
+    - Picture: propValue.url + propValue.flip；style.adaptation
+    - DeVideo: 顶层 videoLinks（非 propValue）；默认 VIDEO_LINKS_DE2
+    """
+    kind_n = normalize_decoration_kind(kind)
+    meta = DECORATION_KINDS.get(kind_n) or {"component": kind_n, "label": kind_n}
     component = meta["component"]
     style = {
-        "adaptation": "adaptation",
+        "adaptation": adaptation or "adaptation",
         "width": width,
         "height": height,
         "left": left,
@@ -446,24 +583,76 @@ def decoration_component(
                 "backgroundColor": "transparent",
             }
         )
+    if component in ("Picture", "DeVideo"):
+        style["backgroundColor"] = "transparent"
     if style_extra:
         style.update(style_extra)
-    pv = prop_value
-    if pv is None:
-        if component == "ScrollText":
-            pv = "数据大屏"
-        elif component == "Picture":
-            pv = {"url": "", "urlList": []}
+
+    icon = component
+    bg = deepcopy(COMMON_BG_DECOR)
+    out_extra: dict[str, Any] = {}
+
+    if component == "Picture":
+        # 界面默认：propValue = { url, flip }；勿写 urlList
+        icon = "dv-picture-real"
+        bg = deepcopy(COMMON_BG_MEDIA)
+        src = url
+        if src is None and isinstance(prop_value, str):
+            src = prop_value
+        if isinstance(prop_value, dict):
+            src = prop_value.get("url") or src
+            pv = {
+                "url": ensure_http_url(str(src)) if src else "",
+                "flip": prop_value.get("flip")
+                or flip
+                or {"horizontal": False, "vertical": False},
+            }
+            for k, v in prop_value.items():
+                if k not in ("url", "flip"):
+                    pv[k] = v
         else:
-            pv = ""
-    return {
+            pv = {
+                "url": ensure_http_url(str(src)) if src else "",
+                "flip": flip or {"horizontal": False, "vertical": False},
+            }
+        if adaptation:
+            style["adaptation"] = adaptation
+    elif component == "DeVideo":
+        # 界面：地址写在 videoLinks[videoType].src，不是 propValue
+        icon = "icon-video"
+        bg = deepcopy(COMMON_BG_MEDIA)
+        src = url
+        if src is None and isinstance(prop_value, dict):
+            src = prop_value.get("url") or prop_value.get("src")
+        if src is None and isinstance(prop_value, str):
+            src = prop_value
+        if isinstance(video_links, dict) and video_links.get("web", {}).get("src") and not src:
+            src = video_links["web"]["src"]
+        out_extra["videoLinks"] = default_video_links(
+            src=src,
+            autoplay=autoplay,
+            loop=loop,
+            muted=muted,
+            video_type=video_type or "web",
+            video_links=video_links,
+        )
+        pv = prop_value if prop_value is not None else ""
+    else:
+        pv = prop_value
+        if pv is None:
+            if component == "ScrollText":
+                pv = "数据大屏"
+            else:
+                pv = ""
+
+    result = {
         "id": cid,
         "component": component,
-        "name": meta.get("label") or kind,
-        "label": meta.get("label") or kind,
+        "name": meta.get("label") or kind_n,
+        "label": meta.get("label") or kind_n,
         "innerType": inner_type or component,
         "propValue": pv,
-        "icon": component,
+        "icon": icon,
         "editing": False,
         "canvasActive": False,
         "actionSelection": {"linkageActive": "custom"},
@@ -479,7 +668,9 @@ def decoration_component(
         "isShow": True,
         "events": {},
         "carousel": {"enable": False, "time": 10},
-        "commonBackground": deepcopy(COMMON_BG_DECOR),
+        "commonBackground": bg,
         "state": "ready",
         "linkageFilters": [],
     }
+    result.update(out_extra)
+    return result

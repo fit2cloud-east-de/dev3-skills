@@ -15,6 +15,41 @@ MARGIN = 24
 GAP = 16
 TITLE_H = 72
 
+# 居中主视觉「宏大感」：按图种视觉冲击加权（不是单纯放大像素）
+# 面状/纪念碑式柱体优先；密表、细条、纯数字不宜占主舞台
+HERO_VISUAL_WEIGHT: dict[str, int] = {
+    "map": 100,
+    "treemap": 92,
+    "bar": 85,
+    "bar-group": 82,
+    "bar-stack": 75,
+    "waterfall": 72,
+    "pie-donut": 68,
+    "pie": 64,
+    "funnel": 62,
+    "area": 58,
+    "area-stack": 56,
+    "radar": 50,
+    "line": 42,
+    "bar-horizontal": 36,
+    "bar-stack-horizontal": 34,
+    "gauge": 32,
+    "liquid": 32,
+    "indicator": 28,
+    "word-cloud": 45,
+    "scatter": 40,
+    "table-info": 12,
+    "table-normal": 12,
+    "table-pivot": 10,
+    "rich-text": 8,
+}
+
+
+def hero_weight(chart_type: Optional[str]) -> int:
+    if not chart_type:
+        return 0
+    return int(HERO_VISUAL_WEIGHT.get(str(chart_type), 40))
+
 
 def _rect(left: int, top: int, width: int, height: int) -> dict[str, int]:
     return {
@@ -74,18 +109,31 @@ def layout_center_v2(
     gap: int = GAP,
     title_h: int = TITLE_H,
 ) -> dict[str, Any]:
-    """居中结构-形式二：大标题 + 中央主视觉 + 左右各 2 次要 + 主视觉下方 1 次要。"""
+    """居中结构-形式二：大标题 + 中央主视觉舞台 + 左右陪衬 + 底栏辅图。
+
+    构图原则（宏大 ≠ 单纯放大）：
+    - 中栏更宽、主舞台更高，形成明确视觉重心；
+    - 左右变窄作「翼」；底栏变扁作「基座」，衬托主视觉；
+    - 主槽宜放 treemap/map/柱体等面状或纪念碑式图种，忌密条/明细表占中。
+    """
+    # 略收边距，让主舞台更「压得住」画面
+    margin = max(16, int(margin))
+    gap = max(12, int(gap))
+    title_h = max(64, int(title_h))
+
     title = _rect(margin, margin, width - 2 * margin, title_h)
     body_top = margin + title_h + gap
     body_h = height - body_top - margin
     body_w = width - 2 * margin
-    # 左右较窄、中间较宽（约 1 : 2.2 : 1）
-    side_w = (body_w - 2 * gap) * 22 // 100
+    # 翼 : 舞台 : 翼 ≈ 0.16 : 0.68 : 0.16（原约 0.22:0.56:0.22）
+    side_w = (body_w - 2 * gap) * 16 // 100
     center_w = body_w - 2 * side_w - 2 * gap
-    # 中间：主视觉约占 62%，下方次要约占 38%
-    main_h = (body_h - gap) * 62 // 100
+    # 主舞台约 72%，底栏基座约 28%（原 62/38）
+    main_h = (body_h - gap) * 72 // 100
     bottom_h = body_h - gap - main_h
-    side_cell_h = (body_h - gap) // 2
+    # 左右翼：上格略高（与主舞台上沿对齐感），下格略矮
+    side_top_h = (body_h - gap) * 48 // 100
+    side_bot_h = body_h - gap - side_top_h
 
     left_x = margin
     center_x = margin + side_w + gap
@@ -95,10 +143,12 @@ def layout_center_v2(
         "title": title,
         "main": _rect(center_x, body_top, center_w, main_h),
         "secondary_bottom": _rect(center_x, body_top + main_h + gap, center_w, bottom_h),
-        "secondary_left_top": _rect(left_x, body_top, side_w, side_cell_h),
-        "secondary_left_bottom": _rect(left_x, body_top + side_cell_h + gap, side_w, side_cell_h),
-        "secondary_right_top": _rect(right_x, body_top, side_w, side_cell_h),
-        "secondary_right_bottom": _rect(right_x, body_top + side_cell_h + gap, side_w, side_cell_h),
+        "secondary_left_top": _rect(left_x, body_top, side_w, side_top_h),
+        "secondary_left_bottom": _rect(left_x, body_top + side_top_h + gap, side_w, side_bot_h),
+        "secondary_right_top": _rect(right_x, body_top, side_w, side_top_h),
+        "secondary_right_bottom": _rect(
+            right_x, body_top + side_top_h + gap, side_w, side_bot_h
+        ),
     }
     # 填充顺序：主视觉优先，再环绕次要（左上→右上→左下→右下→底）
     content = [
@@ -113,13 +163,21 @@ def layout_center_v2(
         "id": "center_v2",
         "name": "居中结构-形式二",
         "aliases": ["居中结构", "居中结构形式二", "居中结构-形式二", "center_v2", "center"],
-        "description": "顶部大标题；中央主内容（地图/主图表）；左右各两块次要；主内容下方一块次要辅助。",
+        "description": (
+            "顶栏标题 + 中央主视觉舞台（宜 map/treemap/柱体等宏大图种）"
+            " + 左右窄翼陪衬 + 底栏扁基座辅图。宏大靠构图层级与图种，而非只放大像素。"
+        ),
         "canvas": {"width": width, "height": height},
         "titleSlot": "title",
         "contentSlots": content,
         "slotOrder": ["title"] + content,
         "primarySlots": ["main"],
         "secondarySlots": [s for s in content if s != "main"],
+        "heroHint": {
+            "prefer": ["map", "treemap", "bar", "bar-group", "bar-stack", "pie-donut"],
+            "avoid": ["table-info", "table-normal", "bar-stack-horizontal", "indicator", "rich-text"],
+            "note": "主槽选面状/纪念碑式图种；密条、明细、小指标放翼或底栏",
+        },
         "slots": slots,
     }
 
@@ -238,6 +296,10 @@ def apply_template_to_plan(plan: dict) -> dict:
         used.add(sn)
     out["charts"] = charts
 
+    # 居中结构：按视觉冲击把更「宏大」的图种换到 main（可 plan.compose=false 关闭）
+    if tpl["id"] == "center_v2" and out.get("compose", True) is not False:
+        out["charts"] = promote_hero_to_main(out["charts"], slots)
+
     # 装饰（非标题）也可按 slot 填
     for d in out["decorations"]:
         sn = d.get("slot")
@@ -245,6 +307,35 @@ def apply_template_to_plan(plan: dict) -> dict:
             d["layout"] = dict(slots[sn])
 
     return out
+
+
+def promote_hero_to_main(charts: list, slots: dict[str, dict]) -> list:
+    """若 main 图种冲击力明显弱于其它槽，交换 slot/layout，形成主视觉重心。"""
+    if not charts or "main" not in slots:
+        return charts
+    main_i = next((i for i, ch in enumerate(charts) if ch.get("slot") == "main"), None)
+    if main_i is None:
+        return charts
+    main_w = hero_weight(charts[main_i].get("type"))
+    best_i, best_w = main_i, main_w
+    for i, ch in enumerate(charts):
+        if i == main_i:
+            continue
+        w = hero_weight(ch.get("type"))
+        if w > best_w:
+            best_i, best_w = i, w
+    # 需明显更强才换（避免无意义对调）
+    if best_i == main_i or best_w < main_w + 15:
+        return charts
+
+    cur, hero = charts[main_i], charts[best_i]
+    other_slot = hero.get("slot") or "secondary_bottom"
+    cur["slot"], hero["slot"] = other_slot, "main"
+    cur["layout"] = dict(slots.get(other_slot) or slots.get("secondary_bottom") or {})
+    hero["layout"] = dict(slots["main"])
+    cur["_composeNote"] = f"主视觉让位给更高冲击图种 {hero.get('type')}"
+    hero["_composeNote"] = "提升为主视觉（宏大构图）"
+    return charts
 
 
 def _has_explicit_box(layout: Any) -> bool:

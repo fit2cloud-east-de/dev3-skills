@@ -19,6 +19,8 @@ python datav.py resolve-folder --name "目标文件夹"
 
 布局模板：`grid_3x4`（平均分布 3×4）、`center_v2`（居中结构-形式二）。内容槽可放任意图表。
 
+**美化示范（居中 + 底图/外框图，提示词配方）：** 见 [datav_showcase_center_beautify.md](datav_showcase_center_beautify.md)。生成的图片/GIF 只放用户工作区，勿写入本 skill。
+
 ## 单图预览（保存前）
 
 ```bash
@@ -46,6 +48,40 @@ python datav.py publish --id <DV_ID> --i-confirm-publish
 python datav.py create-empty --name "联调大屏" --folder-name "目标文件夹"
 python datav.py apply --id <DV_ID> --file plan_charts.json --append
 ```
+
+## 图片 / 视频组件
+
+在 plan 的 `decorations` 中声明（字段与界面媒体栏保存一致）：
+
+```json
+{
+  "name": "媒体联调大屏",
+  "folderName": "目标文件夹",
+  "layout": "grid_3x4",
+  "datasetId": "<DATASET_ID>",
+  "charts": [],
+  "decorations": [
+    {
+      "kind": "Picture",
+      "url": "https://example.com/banner.png",
+      "adaptation": "adaptation",
+      "layout": { "left": 40, "top": 900, "width": 400, "height": 140 }
+    },
+    {
+      "kind": "DeVideo",
+      "url": "https://example.com/demo.mp4",
+      "autoplay": true,
+      "loop": true,
+      "muted": true,
+      "layout": { "left": 1400, "top": 780, "width": 480, "height": 270 }
+    }
+  ]
+}
+```
+
+- 图片 → `propValue.url`；视频 → `videoLinks.web.src`（不要把视频地址写进 `propValue`）  
+- `python datav.py catalog` 可查看 `Picture` / `DeVideo` 说明  
+
 
 ## 数据集规则提醒
 

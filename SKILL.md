@@ -4,8 +4,8 @@ description: >-
   DataEase V3 agent skills via Python API Key for WorkBuddy, Cursor, Codex,
   Claude Code and similar agents. Manages datasource connections, dataset
   creation (tables, fields, preview, calc/group/copy, dimension vs metric), and
-  dataV big-screen creation (chart catalog, layout, decorations, filters,
-  aggregation). Auto-detects local Python3/conda and may install deps only after
+  dataV big-screen creation (chart catalog, layout, decorations including
+  Picture/DeVideo, filters, aggregation). Auto-detects local Python3/conda and may install deps only after
   user confirmation. Use when the user mentions DataEase 数据源/数据集/数据大屏,
   datasource, dataset, dataV, 新建数据源, 新建数据集, 计算字段, 维度指标, 大屏,
   可视化大屏, 图表排版. Dashboard and data storytelling are not implemented yet.
@@ -27,6 +27,7 @@ description: >-
 | 数据集流程与字段操作 | [references/dataset.md](references/dataset.md) |
 | 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
 | 可复制命令 | [examples/datasource.md](examples/datasource.md)、[examples/dataset.md](examples/dataset.md)、[examples/datav.md](examples/datav.md) |
+| 大屏美化示范（居中+底图提示词） | [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)（生成图勿入库，放用户工作区） |
 | 对外说明 | [README.md](README.md) |
 
 ## 强制规则
