@@ -28,7 +28,8 @@
 dev3-skills/
   README.md             # 本说明
   SKILL.md              # Agent 入口与强制规则
-  references/           # 环境、数据源、数据集、大屏
+  assets/               # 文档效果参考图（非运行时生成物）
+  references/           # 环境、数据源、数据集、大屏、视觉规范
   examples/             # 可复制 CLI 示例
   scripts/              # Python CLI
     requirements.txt

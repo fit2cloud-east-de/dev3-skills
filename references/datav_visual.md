@@ -81,6 +81,10 @@ plan 示例字段：
 - [ ] 树图/环图标签可见；tooltip 可读  
 - [ ] `render` 正确（rich-text/indicator → `custom`）  
 - [ ] 取数 preview 通过后再 publish  
-- [ ] 生成图未写入正式 skill 目录  
+- [ ] 运行时美化素材未写入 `scripts/` 等目录（文档参考图除外，见 `assets/`）  
 
-示范提示词与 plan：[examples/datav_showcase_center_beautify.md](../examples/datav_showcase_center_beautify.md)。
+示范提示词与 plan：[examples/datav_showcase_center_beautify.md](../examples/datav_showcase_center_beautify.md)。  
+
+效果参考（季度销售情况看板）：
+
+![季度销售情况看板效果参考](../assets/datav_quarterly_sales_ref.png)

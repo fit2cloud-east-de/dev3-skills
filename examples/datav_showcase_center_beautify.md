@@ -2,14 +2,20 @@
 
 本例从「公有云费用看板」类大屏抽象而来：用**画布底图 + 组件外框图（含动态 GIF）**做氛围，图表落在居中分区，并对单图 `colors` 做微调。  
 构图/配色/外框统一的完整规则见 [references/datav_visual.md](../references/datav_visual.md)。  
-**不要**把生产图片/GIF 放进本 skill 仓库；生成物只落在用户 AI 运行工作区，再经 URL / 静态资源引用进 plan。
+运行时新生成的美化素材只落在用户工作区，再经 URL / 静态资源写入 plan；`assets/` 仅保留文档用**效果参考图**。
+
+## 生成效果参考
+
+按本规范落地的「季度销售情况看板」预览参考（居中主舞台柱图 + 左右占比/趋势 + 底栏辅图；淡彩 `future` + 统一青色外框）：
+
+![季度销售情况看板效果参考](../assets/datav_quarterly_sales_ref.png)
 
 ## Agent 须遵守
 
 1. **资产落点**（强制）  
-   - 生成的 PNG/GIF/SVG 等 → 用户默认工作区（本仓库联调时用仓库外的 `分析区/工作区/generated/`，或会话当前项目的 `./generated/`）。  
-   - **禁止**写入 `dev3-skills/`（含 `examples/`、`scripts/`、`references/`）。  
-   - plan / JSON 里只保留 **可访问 URL** 或 DataEase 已上传的 `/static-resource/...` 路径，不提交二进制。
+   - 运行时生成的 PNG/GIF/SVG（底图、边框等）→ 用户默认工作区（如 `分析区/工作区/generated/` 或会话 `./generated/`），**不要**塞进 `scripts/` / `examples/` / `references/`。  
+   - `assets/` 仅放文档引用的效果参考图（如本页截图），不是每次生成的中间产物。  
+   - plan / JSON 里只保留 **可访问 URL** 或 DataEase 已上传的 `/static-resource/...` 路径。
 
 2. **美化手段优先序**（与产品一致）  
    1. 画布：`canvas.backgroundImageEnable` + `canvas.background`（整屏氛围）  

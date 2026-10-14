@@ -19,7 +19,7 @@ python datav.py resolve-folder --name "目标文件夹"
 
 布局模板：`grid_3x4`（平均分布 3×4）、`center_v2`（居中结构-形式二）。内容槽可放任意图表。
 
-**美化示范（居中 + 底图/外框图，提示词配方）：** 见 [datav_showcase_center_beautify.md](datav_showcase_center_beautify.md)。生成的图片/GIF 只放用户工作区，勿写入本 skill。
+**美化示范（居中 + 底图/外框图，提示词配方）：** 见 [datav_showcase_center_beautify.md](datav_showcase_center_beautify.md)（含效果参考图）。运行时生成的美化素材放用户工作区；文档参考图在 `assets/`。
 
 ## 单图预览（保存前）
 
