@@ -26,6 +26,7 @@ description: >-
 | 数据源类型与字段、API | [references/datasource.md](references/datasource.md) |
 | 数据集流程与字段操作 | [references/dataset.md](references/dataset.md) |
 | 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
+| 大屏构图 / 配色 / 组件一致性 | [references/datav_visual.md](references/datav_visual.md) |
 | 可复制命令 | [examples/datasource.md](examples/datasource.md)、[examples/dataset.md](examples/dataset.md)、[examples/datav.md](examples/datav.md) |
 | 大屏美化示范（居中+底图提示词） | [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)（生成图勿入库，放用户工作区） |
 | 对外说明 | [README.md](README.md) |
@@ -44,7 +45,8 @@ description: >-
    - 先 `datasets` 选型；无合适则按需求评估新建，**禁止随意删改已有数据集**；  
    - **未获用户明确确认，禁止复用非本次创建的已有数据集**；  
    - 若提议修改已有集：必须说明「其它看板/大屏可能引用、数据会跟着变」的风险，自查冲突，冲突则自建新集；  
-   - 图表轴、聚合 `summary`、`customFilter`、布局必须与 `catalog`/字段清单一致；**预览取数失败不得保存**。  
+   - 图表轴、聚合 `summary`、`customFilter`、布局必须与 `catalog`/字段清单一致；**预览取数失败不得保存**；  
+   - **视觉**：构图层级、淡彩/渐变、外框色系统一，见 [references/datav_visual.md](references/datav_visual.md)。  
 10. 展示详情优先藏密码；JDBC 建议先 `validate`，需 schema 的类型先 `get-schema`。
 
 ## 【ADMIN 警告】（原样展示）
@@ -65,7 +67,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **数据集：** 确认数据源与文件夹 → `tables` → `fields`/`classify` →（可选 ops）→ `preview` → `create`。  
 
-**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版（`grid_3x4` 平均分布 3×4 或 `center_v2` 居中结构）→ 写 plan（`layout` + 各槽图表）→ `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
+**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版 → 按 [datav_visual.md](references/datav_visual.md) 定主视觉/色板/外框 → 写 plan → `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
 
 ## 范围外
 

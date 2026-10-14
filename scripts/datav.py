@@ -87,6 +87,7 @@ def cmd_catalog(client: DataEaseClient, _args: argparse.Namespace) -> None:
                 "图片 Picture：decorations 写 kind=Picture + url（写入 propValue.url）；可选 adaptation",
                 "视频 DeVideo：decorations 写 kind=DeVideo + url（写入 videoLinks.web.src）；勿把地址塞进 propValue",
                 "美化示范：canvas.background + 组件 commonBackground.outerImage；配色用 charts[].extraView；见 examples/datav_showcase_center_beautify.md",
+                "视觉规范：references/datav_visual.md（主视觉层级、淡彩/渐变、外框色系统一）",
                 "生成的美化图只放用户工作区，禁止写入正式 skill 目录",
             ],
         }

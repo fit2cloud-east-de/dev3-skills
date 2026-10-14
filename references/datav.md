@@ -39,6 +39,10 @@
 - 图表 **提示（tooltip）** 默认白底黑字（`color:#000000`），勿改成白字  
 - 查看像素：`python datav.py layouts --id grid_3x4`
 
+## 视觉与构图（必读）
+
+排版模板只解决槽位；**层级、淡彩/渐变、外框统一、主图图种**见 [datav_visual.md](datav_visual.md)。做美化大屏时与本节交叉遵守。
+
 ## 示范案例（居中美化）
 
 「公有云费用看板」类大屏：整屏底图 + 组件 `commonBackground.outerImage`（含 GIF）做边框/动效，图种以环图/树图/折线/横向堆叠条 + 富文本 KPI 为主，并对 `customAttr.basicStyle.colors` 微调。  

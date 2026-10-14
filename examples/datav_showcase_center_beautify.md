@@ -1,6 +1,7 @@
 # 示范案例：居中结构 + 美化底图（提示词配方）
 
 本例从「公有云费用看板」类大屏抽象而来：用**画布底图 + 组件外框图（含动态 GIF）**做氛围，图表落在居中分区，并对单图 `colors` 做微调。  
+构图/配色/外框统一的完整规则见 [references/datav_visual.md](../references/datav_visual.md)。  
 **不要**把生产图片/GIF 放进本 skill 仓库；生成物只落在用户 AI 运行工作区，再经 URL / 静态资源引用进 plan。
 
 ## Agent 须遵守
