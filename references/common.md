@@ -57,10 +57,11 @@ API Key：AES(`accessKey|uuid|timestamp`) + JWT；请求头 `accessKey` / `signa
 ## 文件夹定位
 
 - `--pid`（id）或 `--folder-name`（名称，须在范围内唯一）
-- **数据源 / 数据集 / 数据大屏是三棵独立树**：同名组织在各侧的 **id 通常不同**。  
+- **数据源 / 数据集 / 数据大屏 / 仪表板是四棵独立树**：同名组织在各侧的 **id 通常不同**。  
   - 数据源：`datasource.py resolve-folder`  
   - 数据集：`dataset.py resolve-folder`  
   - 数据大屏：`datav.py resolve-folder`（或 `datasource.py resolve-folder --kind dataV`）  
+  - 仪表板：`dashboard.py resolve-folder`（或 `datasource.py resolve-folder --kind dashboard`）  
   切勿跨树混用组织根 id。
 - 同名 / 子目录同名：先 resolve-folder，把候选交给用户确认后再用 `--pid`
 - 写入须落在用户允许范围 + `DE_ALLOWED_WRITE_SCOPE` 内；若同时写多类资源，scope 需包含**各树**允许的组织根/文件夹 id

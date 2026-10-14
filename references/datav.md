@@ -1,6 +1,6 @@
 # 数据大屏（dataV）
 
-通过 API 创建/更新 **数据大屏**（`type=dataV`）。仪表板（dashboard）本 skill 暂不实现。
+通过 API 创建/更新 **数据大屏**（`type=dataV`）。仪表板见 [dashboard.md](dashboard.md)（独立资源树与矩阵布局，勿混用）。
 
 ## Agent 强制流程（数据集）
 

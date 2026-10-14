@@ -195,7 +195,7 @@ def _walk_tree_index(
 
 
 def _tree_endpoint(kind: str) -> tuple[str, str]:
-    """返回 (path, busiFlag)。kind: datasource | dataset | dataV。"""
+    """返回 (path, busiFlag)。kind: datasource | dataset | dataV | dashboard。"""
     k = (kind or "datasource").strip().lower()
     if k == "dataset":
         return "/datasetTree/tree", "dataset"
@@ -203,7 +203,11 @@ def _tree_endpoint(kind: str) -> tuple[str, str]:
         return "/datasource/tree", "datasource"
     if k in ("datav", "data_v", "screen"):
         return "/dataVisualization/tree", "dataV"
-    raise DataEaseClientError(f"未知资源树 kind={kind}，仅支持 datasource / dataset / dataV")
+    if k in ("dashboard", "panel", "db"):
+        return "/dataVisualization/tree", "dashboard"
+    raise DataEaseClientError(
+        f"未知资源树 kind={kind}，仅支持 datasource / dataset / dataV / dashboard"
+    )
 
 
 def _load_tree_index(client: DataEaseClient, *, kind: str = "datasource") -> dict:
@@ -366,6 +370,15 @@ def _fetch_node_detail_for_scope(
             detail = client.post(
                 "/dataVisualization/findById",
                 {"id": tid, "busiFlag": "dataV", "resourceTable": "core"},
+            )
+            return detail if isinstance(detail, dict) else None
+        except DataEaseClientError:
+            return None
+    if kind in ("dashboard", "panel", "db"):
+        try:
+            detail = client.post(
+                "/dataVisualization/findById",
+                {"id": tid, "busiFlag": "dashboard", "resourceTable": "core"},
             )
             return detail if isinstance(detail, dict) else None
         except DataEaseClientError:
@@ -785,8 +798,8 @@ def build_parser() -> argparse.ArgumentParser:
     rf.add_argument(
         "--kind",
         default="datasource",
-        choices=["datasource", "dataset", "dataV"],
-        help="资源树：datasource（默认）/ dataset / dataV；各树组织根 id 通常不同",
+        choices=["datasource", "dataset", "dataV", "dashboard"],
+        help="资源树：datasource（默认）/ dataset / dataV / dashboard；各树组织根 id 通常不同",
     )
     rf.set_defaults(func=cmd_resolve_folder)
 

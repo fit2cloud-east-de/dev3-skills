@@ -1,6 +1,6 @@
 # DataEase V3 Skills（dev3-skills）
 
-面向 **AI Agent** 的 DataEase 3.x 能力包：通过 **Python3 + API Key** 管理数据源、新建数据集、制作数据大屏（dataV）。
+面向 **AI Agent** 的 DataEase 3.x 能力包：通过 **Python3 + API Key** 管理数据源、新建数据集、制作数据大屏（dataV）与仪表板（dashboard）。
 
 可在 **WorkBuddy、Cursor、Codex、Claude Code** 等支持 Agent Skills / 自定义技能的工具中加载本目录后使用。Agent 入口为 [SKILL.md](SKILL.md)；字段与流程见 `references/`，命令示例见 `examples/`。
 
@@ -11,7 +11,8 @@
 | 数据源 | 已实现 | 查询 / 新建 / 校验 / 更新 / 删除（内置类型） |
 | 数据集 | 已实现 | 取表 → 字段 → 预览 → 保存；计算 / 分组 / 复制字段；维度 / 指标 |
 | 数据大屏 dataV | 已实现 | 图表选型、像素排版、装饰/图片/视频、过滤与聚合、视觉构图规范、发布 |
-| 仪表板 / 数据故事 | 未实现 | — |
+| 仪表板 dashboard | 已实现 | 亮色主题、矩阵布局（72×36）、模板排版、过滤与聚合、发布 |
+| 数据故事 | 未实现 | — |
 | 插件数据源新建/改配置 | 未实现 | 产品中可能可见；查询仍可用 |
 
 ## 数据大屏效果参考
@@ -21,6 +22,14 @@
 ![季度销售情况看板效果参考](assets/datav_quarterly_sales_ref.png)
 
 提示词与 plan 见 [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)；构图规则见 [references/datav_visual.md](references/datav_visual.md)。
+
+## 仪表板效果参考
+
+亮色矩阵布局示例（经营概览：指标卡 + 柱/环/折线/条形 + 明细表）：
+
+![经营概览仪表板效果参考](assets/dashboard_overview_ref.png)
+
+流程与 plan 见 [examples/dashboard.md](examples/dashboard.md)；说明见 [references/dashboard.md](references/dashboard.md)。
 
 ## 在 Agent 中使用
 
@@ -37,7 +46,7 @@ dev3-skills/
   README.md             # 本说明
   SKILL.md              # Agent 入口与强制规则
   assets/               # 文档效果参考图（非运行时生成物）
-  references/           # 环境、数据源、数据集、大屏、视觉规范
+  references/           # 环境、数据源、数据集、大屏、仪表板、视觉规范
   examples/             # 可复制 CLI 示例
   scripts/              # Python CLI
     requirements.txt
@@ -45,6 +54,7 @@ dev3-skills/
     datasource.py
     dataset.py
     datav.py
+    dashboard.py
 ```
 
 ## 环境要求
@@ -83,8 +93,8 @@ cd scripts
 export DE_BASE_URL=https://your-de-host
 export DE_ACCESS_KEY=your_access_key
 export DE_SECRET_KEY=your_secret_key
-# 推荐：允许写入的组织根/文件夹（逗号分隔；数据源/数据集/大屏三棵树 id 通常不同）
-export DE_ALLOWED_WRITE_SCOPE=<id1>,<id2>,<id3>
+# 推荐：允许写入的组织根/文件夹（逗号分隔；数据源/数据集/大屏/仪表板四棵树 id 通常不同）
+export DE_ALLOWED_WRITE_SCOPE=<id1>,<id2>,<id3>,<id4>
 ```
 
 Windows PowerShell：
@@ -103,6 +113,7 @@ $env:DE_ALLOWED_WRITE_SCOPE="..."
 python datasource.py whoami
 python datasource.py types
 python datav.py catalog
+python dashboard.py catalog
 ```
 
 更多约定见 [references/common.md](references/common.md)。
@@ -116,14 +127,15 @@ python datav.py catalog
 | 数据集 | [references/dataset.md](references/dataset.md) · [examples/dataset.md](examples/dataset.md) |
 | 数据大屏 | [references/datav.md](references/datav.md) · [examples/datav.md](examples/datav.md) |
 | 大屏视觉 / 构图 | [references/datav_visual.md](references/datav_visual.md) · [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md) |
+| 仪表板 | [references/dashboard.md](references/dashboard.md) · [examples/dashboard.md](examples/dashboard.md) |
 | Agent 强制规则与工作流 | [SKILL.md](SKILL.md) |
 
 ## 使用约定（摘要）
 
-1. **三棵独立资源树**：数据源、数据集、数据大屏的组织 / 文件夹 id 通常不同，用对应 CLI 的 `resolve-folder`，勿混用。  
+1. **四棵独立资源树**：数据源、数据集、数据大屏、仪表板的组织 / 文件夹 id 通常不同，用对应 CLI 的 `resolve-folder`，勿混用。  
 2. **写入边界**：只在用户允许范围与 `DE_ALLOWED_WRITE_SCOPE` 内增删改。  
 3. **删改须确认**：先备份与风险说明，用户同意后再执行。  
-4. **数据集与大屏**：未确认不得随意复用或修改已有数据集；图表保存前须取数预览成功。  
+4. **数据集与可视化**：未确认不得随意复用或修改已有数据集；图表保存前须取数预览成功。  
 5. **配置以 reference 为准**：不要传入未文档化的类型或字段。  
 6. **Python 安装须确认**：自动检测可以，自动安装前必须解释并得到用户同意。
 
