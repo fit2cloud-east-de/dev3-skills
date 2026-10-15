@@ -9,7 +9,8 @@ description: >-
   Auto-detects local Python3/conda and may install deps only after user confirmation.
   Use when the user mentions DataEase 数据源/数据集/数据大屏/仪表板, datasource,
   dataset, dataV, dashboard, 新建数据源, 新建数据集, 计算字段, 维度指标, 大屏,
-  可视化大屏, 看板, 图表排版. Data storytelling is not implemented yet.
+  可视化大屏, 看板, 图表排版, 血缘分析, 关联分析, 编辑数据集, 删除数据集.
+  Data storytelling is not implemented yet.
 ---
 
 # DataEase V3 Skills
@@ -25,7 +26,7 @@ description: >-
 |------|------|
 | 环境 / Python 检测 / 认证 / 文件夹 / 风险话术 | [references/common.md](references/common.md) |
 | 数据源类型与字段、API | [references/datasource.md](references/datasource.md) |
-| 数据集流程与字段操作 | [references/dataset.md](references/dataset.md) |
+| 数据集流程、字段操作、编辑/删除与血缘 | [references/dataset.md](references/dataset.md) |
 | 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
 | 大屏构图 / 配色 / 组件一致性 | [references/datav_visual.md](references/datav_visual.md) |
 | 仪表板流程、矩阵布局、与 dataV 差异 | [references/dashboard.md](references/dashboard.md) |
@@ -50,7 +51,8 @@ description: >-
    - 图表轴、聚合 `summary`、`customFilter`、布局必须与 `catalog`/字段清单一致；**预览取数失败不得保存**；  
    - **大屏视觉**：构图层级、淡彩/渐变、外框色系统一，见 [references/datav_visual.md](references/datav_visual.md)；  
    - **仪表板**：亮色矩阵布局（`x/y/sizeX/sizeY`），勿用大屏像素坐标或暗色大屏主题。  
-10. 展示详情优先藏密码；JDBC 建议先 `validate`，需 schema 的类型先 `get-schema`。
+10. **编辑/删除已有资源前必须血缘分析**（详见 [references/common.md](references/common.md)）：改动非本任务创建的数据集等资源前，先查下游引用（`relation.py get`；`dataset.py edit/delete` 已内置强制执行）。**有仪表板/数据大屏引用**：须向用户展示引用清单与风险（相关图表将不可用），**用户输入「确认修改」四字**后方可继续（`--confirm-modify 确认修改`），否则拒绝；**无下游引用**：仍须用户确认（`--yes`）；**当前任务新建且无外部操作**：可免提示继续（`--session-created`，仅限 Agent 能确认时）。
+11. 展示详情优先藏密码；JDBC 建议先 `validate`，需 schema 的类型先 `get-schema`。
 
 ## 【ADMIN 警告】（原样展示）
 
@@ -68,7 +70,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **数据源：** 确认文件夹 → 查/建/校验 → 更新删除须备份+确认。  
 
-**数据集：** 确认数据源与文件夹 → `tables` → `fields`/`classify` →（可选 ops）→ `preview` → `create`。  
+**数据集：** 确认数据源与文件夹 → `tables` → `fields`/`classify` →（可选 ops）→ `preview` → `create`；**编辑/删除已有集：先血缘分析（内置），按分级确认（确认修改 / --yes / --session-created）执行**。  
 
 **数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版 → 按 [datav_visual.md](references/datav_visual.md) 定主视觉/色板/外框 → 写 plan → `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
 

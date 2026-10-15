@@ -47,7 +47,7 @@
 
 「公有云费用看板」类大屏：整屏底图 + 组件 `commonBackground.outerImage`（含 GIF）做边框/动效，图种以环图/树图/折线/横向堆叠条 + 富文本 KPI 为主，并对 `customAttr.basicStyle.colors` 微调。  
 **提示词与 plan 示意：** [examples/datav_showcase_center_beautify.md](../examples/datav_showcase_center_beautify.md)。  
-**资产规则：** AI 用 Python 生成的美化图只落在**用户工作区**（如 `分析区/工作区/generated/`），禁止放进正式 `dev3-skills/`；plan 只引用 URL 或 `/static-resource/...`。
+**资产规则：** AI 用 Python 生成的美化图只落在**用户工作区**（如会话 `./generated/`），禁止放进正式 `dev3-skills/`；plan 只引用 URL 或 `/static-resource/...`。
 
 ## 画布与组件
 

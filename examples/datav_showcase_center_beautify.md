@@ -13,7 +13,7 @@
 ## Agent 须遵守
 
 1. **资产落点**（强制）  
-   - 运行时生成的 PNG/GIF/SVG（底图、边框等）→ 用户默认工作区（如 `分析区/工作区/generated/` 或会话 `./generated/`），**不要**塞进 `scripts/` / `examples/` / `references/`。  
+   - 运行时生成的 PNG/GIF/SVG（底图、边框等）→ 用户工作区（如会话 `./generated/`），**不要**塞进 `scripts/` / `examples/` / `references/`。  
    - `assets/` 仅放文档引用的效果参考图（如本页截图），不是每次生成的中间产物。  
    - plan / JSON 里只保留 **可访问 URL** 或 DataEase 已上传的 `/static-resource/...` 路径。
 
@@ -135,4 +135,3 @@ mkdir -p generated/datav_beautify
 
 - 命令与通用流程：[datav.md](datav.md)  
 - 字段说明：[../references/datav.md](../references/datav.md)  
-- 原始拆解（含测试环境 id，仅分析区）：仓库 `分析区/工作区/公有云费用看板_案例分析.md`

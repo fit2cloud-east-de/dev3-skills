@@ -13,6 +13,50 @@
 
 ---
 
+## 预览已保存数据集
+
+```bash
+python dataset.py preview --id <数据集ID>
+```
+
+取详情后走 previewData，仅查询不落任何修改。取数失败说明数据源侧有变化，应先排查再谈编辑。
+
+---
+
+## 编辑已保存数据集（edit）
+
+编辑**非本任务创建**的数据集前，`dataset.py edit` 会自动执行**血缘分析**并按结果分级确认（规则见 [common.md](common.md)「血缘分析」）：
+
+1. `python dataset.py get --id <数据集ID>` — 导出当前详情（可存文件修改）
+2. `python dataset.py edit --id <数据集ID> ...` — 自动血缘分析 → 分级确认 → 预览取数成功 → `POST /de2api/datasetTree/save`
+
+| 修改方式 | 参数 |
+|----------|------|
+| 完整载荷 | `--file`（get 导出后修改的 JSON）/ `--json` |
+| 仅改名 | `--name` |
+| 追加字段操作 | `--ops-file` / `--ops-json`（copy/calc/group，同新建） |
+| 强制维度/指标 | `--dq-map` |
+
+| 情形 | 确认开关 |
+|------|----------|
+| 被仪表板/数据大屏引用 | 须用户输入「确认修改」四字：`--confirm-modify 确认修改`，否则拒绝 |
+| 无下游引用 | `--yes` |
+| 当前任务新建且无外部操作 | `--session-created`（免提示） |
+
+预览默认强制执行（失败不保存），`--skip-preview` 可跳过但不推荐。
+
+---
+
+## 删除数据集（delete）
+
+```bash
+python dataset.py delete --id <数据集ID>
+```
+
+自动血缘分析 + 分级确认（同上；确认口令接受「确认修改」或「确认删除」），另有 `perDelete` 引用检查兜底。确认后 `POST /de2api/datasetTree/delete`（`{ id, rootOrgNode? }`）。组织根节点删除须加 `--root-org-node`。
+
+---
+
 ## tableField 请求
 
 ```json
@@ -122,7 +166,10 @@ Excel / 本地文件类数据源：`type` 仍常用 `db`，`tableName` 为 `getT
 | POST | /de2api/datasetTree/get/{id} | 详情 |
 | POST | /de2api/datasetTree/create | 新建 |
 | POST | /de2api/datasetTree/save | 更新保存 |
+| POST | /de2api/datasetTree/delete | 删除（`{ id, rootOrgNode? }`） |
+| POST | /de2api/datasetTree/perDelete/{id} | 删除前引用检查（true/false） |
 | POST | /de2api/datasetData/previewData | 预览 |
+| POST | /de2api/relation/dataset/{id} | 血缘分析（返回结构因资源类型而异，建议用 `relation.py`，已适配） |
 
 文件夹定位：**必须在数据集树**上解析（`dataset.py resolve-folder`），规则同数据源（id 或唯一名称；同名须确认）。**不要**使用数据源树的组织/文件夹 id 作为 `pid`。写入范围受 `DE_ALLOWED_WRITE_SCOPE` 约束（须包含数据集侧允许节点）。
 

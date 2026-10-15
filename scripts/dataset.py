@@ -21,6 +21,7 @@ from datasource import (  # 复用组织边界与 admin/备份提醒
     _remind_backup_and_admin,
     _resolve_folder,
 )
+from relation import relation_gate, type_label as _rel_type_label
 
 # deType: 0文本 1时间 2整型 3浮点 4布尔 5地理 6二进制 7URL
 # groupType: d=维度 q=指标（默认规则与产品一致）
@@ -196,6 +197,20 @@ def _build_union_and_fields(
 
 
 def cmd_preview(client: DataEaseClient, args: argparse.Namespace) -> None:
+    if args.id:
+        # 已保存数据集预览：取详情后走 previewData
+        detail = client.post(f"/datasetTree/get/{args.id}", {})
+        if not isinstance(detail, dict) or not detail.get("id"):
+            raise DataEaseClientError(f"无法获取数据集详情: {args.id}")
+        body = {
+            "id": str(args.id),
+            "union": detail.get("union"),
+            "allFields": _encode_calc_fields(detail.get("allFields") or []),
+            "isCross": detail.get("isCross", False),
+        }
+        data = client.post("/datasetData/previewData", body)
+        _print_json(data)
+        return
     payload = _load_json(args.json, args.file)
     if payload is None:
         # 快捷：datasource + table
@@ -339,6 +354,59 @@ def cmd_resolve_folder(client: DataEaseClient, args: argparse.Namespace) -> None
 
     args.kind = "dataset"
     _ds_resolve(client, args)
+
+
+def _relation_gate_for_mutate(
+    client: DataEaseClient,
+    dataset_id: str,
+    *,
+    action: str,
+    confirm_modify: Optional[str],
+    plain_confirm: bool,
+    session_created: bool,
+    accept_words: tuple = ("确认修改",),
+) -> None:
+    """编辑/删除陌生数据集前的强制血缘分析与分级确认。
+
+    - 有仪表板/数据大屏引用：须用户输入「确认修改」（--confirm-modify 确认修改）方可继续，否则拒绝；
+    - 无任何下游引用：仍须普通确认（--yes）；
+    - 本任务新建且无外部操作（--session-created，由 Agent 判定并声明）：免确认直接继续。
+    血缘报告始终打印，保持透明。
+    """
+    summary = relation_gate(client, "dataset", dataset_id)
+
+    if session_created:
+        print(
+            "该数据集为当前任务新建且无外部操作，按约定免确认继续（血缘报告见上）。",
+            file=sys.stderr,
+        )
+        return
+
+    if summary.get("hasVisualUsage"):
+        lines = [
+            f"⚠️⚠️⚠️ 高风险：该数据集正被下列看板引用，{action}后其中图表将不可用 ⚠️⚠️⚠️",
+        ]
+        for v in summary.get("visualUsage") or []:
+            lines.append(
+                f"  - {_rel_type_label(v.get('visualType'))}「{v.get('visualName')}」"
+                f"(id={v.get('visualId')})"
+            )
+        lines.append("请先备份相关看板与数据集，谨慎决策；确认风险后仍要继续，")
+        lines.append("须由用户明确输入「确认修改」四字后执行：--confirm-modify 确认修改")
+        print("\n".join(lines), file=sys.stderr)
+        if (confirm_modify or "").strip() not in accept_words:
+            raise DataEaseClientError(
+                f"数据集被仪表板/数据大屏引用，未经用户输入「{'、'.join(accept_words)}」拒绝{action}。"
+                "请向用户展示上方引用清单与风险说明，用户确认后重试并附加"
+                " --confirm-modify 确认修改"
+            )
+        return
+
+    if not plain_confirm:
+        raise DataEaseClientError(
+            f"该数据集当前无下游看板引用；{action}前仍需用户确认：确认后附加 --yes 重试。"
+            "（若该数据集为当前任务新建且无外部操作，可改用 --session-created）"
+        )
 
 
 def cmd_move(client: DataEaseClient, args: argparse.Namespace) -> None:
@@ -501,6 +569,97 @@ def cmd_get(client: DataEaseClient, args: argparse.Namespace) -> None:
     _print_json(client.post(f"/datasetTree/get/{args.id}", {}))
 
 
+def cmd_edit(client: DataEaseClient, args: argparse.Namespace) -> None:
+    """编辑已保存数据集：血缘分析 → 分级确认 → 预览 → /datasetTree/save。"""
+    _remind_backup_and_admin(client, mutating=True)
+    _assert_within_write_scope(client, args.id, role="编辑目标", kind="dataset")
+    _relation_gate_for_mutate(
+        client,
+        args.id,
+        action="修改",
+        confirm_modify=args.confirm_modify,
+        plain_confirm=args.yes,
+        session_created=args.session_created,
+    )
+
+    detail = client.post(f"/datasetTree/get/{args.id}", {})
+    if not isinstance(detail, dict) or not detail.get("id"):
+        raise DataEaseClientError(f"无法获取数据集详情: {args.id}")
+
+    payload = _load_json(args.json, args.file)
+    if payload is None:
+        payload = dict(detail)
+        if args.name:
+            payload["name"] = args.name
+        ops = []
+        if args.ops_file:
+            ops = _load_json(None, args.ops_file) or []
+        if args.ops_json:
+            ops = json.loads(args.ops_json)
+        if ops:
+            payload["allFields"] = _apply_field_ops(payload.get("allFields") or [], ops)
+        if args.dq_map:
+            dq = json.loads(args.dq_map)
+            for f in payload.get("allFields") or []:
+                if f.get("name") in dq and dq[f["name"]] in ("d", "q"):
+                    f["groupType"] = dq[f["name"]]
+    else:
+        if str(payload.get("id")) != str(args.id):
+            raise DataEaseClientError("--file/--json 载荷的 id 与 --id 不一致")
+
+    body = dict(payload)
+    body["id"] = str(args.id)
+    if not body.get("name"):
+        raise DataEaseClientError("缺少数据集名称")
+    if not body.get("union"):
+        raise DataEaseClientError("缺少 union（建议先 get --id 取详情修改后再提交）")
+    if isinstance(body.get("allFields"), list):
+        body["allFields"] = _encode_calc_fields(body["allFields"])
+
+    if not args.skip_preview:
+        client.post(
+            "/datasetData/previewData",
+            {
+                "id": body["id"],
+                "union": body["union"],
+                "allFields": body["allFields"],
+                "isCross": body.get("isCross", False),
+            },
+        )
+        print("preview ok（预览失败会在此报错，不会保存）", file=sys.stderr)
+
+    data = client.post("/datasetTree/save", body)
+    _print_json(data)
+
+
+def cmd_delete(client: DataEaseClient, args: argparse.Namespace) -> None:
+    """删除数据集：血缘分析 → 分级确认 → perDelete 兜底 → /datasetTree/delete。"""
+    _remind_backup_and_admin(client, mutating=True)
+    _assert_within_write_scope(client, args.id, role="删除目标", kind="dataset")
+    _relation_gate_for_mutate(
+        client,
+        args.id,
+        action="删除",
+        confirm_modify=args.confirm_modify,
+        plain_confirm=args.yes,
+        session_created=args.session_created,
+        accept_words=("确认修改", "确认删除"),
+    )
+    in_use = client.post(f"/datasetTree/perDelete/{args.id}", {})
+    if in_use and (args.confirm_modify or "").strip() not in ("确认修改", "确认删除") and not args.session_created:
+        raise DataEaseClientError(
+            "perDelete 显示仍有资源引用该数据集，未经「确认修改」拒绝删除。"
+            "请向用户说明影响并确认后，附加 --confirm-modify 确认修改 重试"
+        )
+    if in_use:
+        print("警告: 仍有资源引用该数据集，按已获确认继续删除。", file=sys.stderr)
+    body = {"id": str(args.id)}
+    if args.root_org_node:
+        body["rootOrgNode"] = True
+    data = client.post("/datasetTree/delete", body)
+    _print_json(data if data is not None else {"deleted": True, "id": args.id})
+
+
 def cmd_classify(client: DataEaseClient, args: argparse.Namespace) -> None:
     """仅输出字段维度/指标建议，不保存。"""
     fields = client.post(
@@ -562,7 +721,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--table-type", default="db")
     c.set_defaults(func=cmd_classify)
 
-    pv = sub.add_parser("preview", help="预览数据集数据")
+    pv = sub.add_parser("preview", help="预览数据集数据（--id 预览已保存数据集；或数据源+表）")
+    pv.add_argument("--id", default=None, help="已保存数据集 id")
     pv.add_argument("--file")
     pv.add_argument("--json")
     pv.add_argument("--datasource-id")
@@ -597,6 +757,48 @@ def build_parser() -> argparse.ArgumentParser:
     cr.add_argument("--dq-map", help='强制维度指标映射 JSON，如 {"销售额":"q"}')
     cr.add_argument("--skip-preview", action="store_true")
     cr.set_defaults(func=cmd_create)
+
+    ed = sub.add_parser("edit", help="编辑已保存数据集（先自动血缘分析，分级确认后预览保存）")
+    ed.add_argument("--id", required=True, help="数据集 id")
+    ed.add_argument("--name", default=None, help="新名称（可选）")
+    ed.add_argument("--file", help="完整修改后的 DatasetGroupInfoDTO JSON（由 get --id 导出后修改）")
+    ed.add_argument("--json", help="完整载荷 JSON 字符串")
+    ed.add_argument("--ops-file", help="字段操作 JSON 文件（copy/calc/group，叠加到现有字段）")
+    ed.add_argument("--ops-json", help="字段操作 JSON 字符串")
+    ed.add_argument("--dq-map", help='强制维度指标映射 JSON，如 {"销售额":"q"}')
+    ed.add_argument("--skip-preview", action="store_true")
+    ed.add_argument(
+        "--confirm-modify",
+        default=None,
+        help='被看板引用时的确认口令，值须为「确认修改」',
+    )
+    ed.add_argument(
+        "--yes",
+        action="store_true",
+        help="无下游引用时的普通确认（用户已同意修改）",
+    )
+    ed.add_argument(
+        "--session-created",
+        action="store_true",
+        help="声明该数据集为当前任务新建且无外部操作（Agent 判定后使用，免确认）",
+    )
+    ed.set_defaults(func=cmd_edit)
+
+    dl = sub.add_parser("delete", help="删除数据集（先自动血缘分析，分级确认后删除）")
+    dl.add_argument("--id", required=True, help="数据集 id")
+    dl.add_argument("--root-org-node", action="store_true")
+    dl.add_argument(
+        "--confirm-modify",
+        default=None,
+        help='被看板引用时的确认口令，值须为「确认修改」或「确认删除」',
+    )
+    dl.add_argument("--yes", action="store_true", help="无下游引用时的普通确认")
+    dl.add_argument(
+        "--session-created",
+        action="store_true",
+        help="声明该数据集为当前任务新建且无外部操作（Agent 判定后使用，免确认）",
+    )
+    dl.set_defaults(func=cmd_delete)
 
     return p
 
