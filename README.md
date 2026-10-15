@@ -12,6 +12,7 @@
 | 数据集 | 已实现 | 取表 → 字段 → 预览 → 保存；计算 / 分组 / 复制字段；维度 / 指标；编辑 / 删除（内置血缘分析与分级确认） |
 | 数据大屏 dataV | 已实现 | 图表选型、像素排版、装饰/图片/视频、过滤与聚合、视觉构图规范、发布 |
 | 仪表板 dashboard | 已实现 | 亮色主题、矩阵布局（72×36）、模板排版、过滤与聚合、发布 |
+| 电子表格 spreadsheet | 已实现 | 新建多 Sheet 表格：单元格/公式/样式/合并/列宽/条件格式；修改本任务所建；发布 |
 | 数据故事 | 未实现 | — |
 | 插件数据源新建/改配置 | 未实现 | 产品中可能可见；查询仍可用 |
 
@@ -46,7 +47,7 @@ dev3-skills/
   README.md             # 本说明
   SKILL.md              # Agent 入口与强制规则
   assets/               # 文档效果参考图（非运行时生成物）
-  references/           # 环境、数据源、数据集、大屏、仪表板、视觉规范
+  references/           # 环境、数据源、数据集、大屏、仪表板、电子表格、视觉规范
   examples/             # 可复制 CLI 示例
   scripts/              # Python CLI
     requirements.txt
@@ -56,6 +57,7 @@ dev3-skills/
     datav.py
     dashboard.py
     relation.py
+    spreadsheet.py
 ```
 
 ## 环境要求
@@ -94,7 +96,7 @@ cd scripts
 export DE_BASE_URL=https://your-de-host
 export DE_ACCESS_KEY=your_access_key
 export DE_SECRET_KEY=your_secret_key
-# 推荐：允许写入的组织根/文件夹（逗号分隔；数据源/数据集/大屏/仪表板四棵树 id 通常不同）
+# 推荐：允许写入的组织根/文件夹（逗号分隔；数据源/数据集/大屏/仪表板/电子表格五棵树 id 通常不同）
 export DE_ALLOWED_WRITE_SCOPE=<id1>,<id2>,<id3>,<id4>
 ```
 
@@ -129,16 +131,18 @@ python dashboard.py catalog
 | 数据大屏 | [references/datav.md](references/datav.md) · [examples/datav.md](examples/datav.md) |
 | 大屏视觉 / 构图 | [references/datav_visual.md](references/datav_visual.md) · [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md) |
 | 仪表板 | [references/dashboard.md](references/dashboard.md) · [examples/dashboard.md](examples/dashboard.md) |
+| 电子表格 | [references/spreadsheet.md](references/spreadsheet.md) · [examples/spreadsheet.md](examples/spreadsheet.md) |
 | Agent 强制规则与工作流 | [SKILL.md](SKILL.md) |
 
 ## 使用约定（摘要）
 
-1. **四棵独立资源树**：数据源、数据集、数据大屏、仪表板的组织 / 文件夹 id 通常不同，用对应 CLI 的 `resolve-folder`，勿混用。  
+1. **五棵独立资源树**：数据源、数据集、数据大屏、仪表板、电子表格的组织 / 文件夹 id 通常不同，用对应 CLI 的 `resolve-folder`，勿混用。  
 2. **写入边界**：只在用户允许范围与 `DE_ALLOWED_WRITE_SCOPE` 内增删改。  
 3. **删改须确认**：先备份与风险说明，用户同意后再执行。**数据源删除禁止自动执行**：须先列出其血缘引用，且用户完整输入口令「我确认删除此数据源，并已知风险、不会影响业务」方可删除。  
 4. **数据集与可视化**：未确认不得随意复用或修改已有数据集；图表保存前须取数预览成功。**编辑/删除已有资源前强制血缘分析**：被仪表板/数据大屏引用时须用户输入「确认修改」方可继续。  
-5. **配置以 reference 为准**：不要传入未文档化的类型或字段。  
-6. **Python 安装须确认**：自动检测可以，自动安装前必须解释并得到用户同意。
+5. **电子表格**：仅可修改当前任务内创建的电子表格；不支持修改已存在的电子表格。  
+6. **配置以 reference 为准**：不要传入未文档化的类型或字段。  
+7. **Python 安装须确认**：自动检测可以，自动安装前必须解释并得到用户同意。
 
 ## License
 

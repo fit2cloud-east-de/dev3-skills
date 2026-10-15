@@ -7,17 +7,17 @@ description: >-
   dataV big-screen and dashboard creation (chart catalog, layout, decorations
   including Picture/DeVideo, matrix layouts for dashboards, filters, aggregation).
   Auto-detects local Python3/conda and may install deps only after user confirmation.
-  Use when the user mentions DataEase 数据源/数据集/数据大屏/仪表板, datasource,
-  dataset, dataV, dashboard, 新建数据源, 新建数据集, 计算字段, 维度指标, 大屏,
-  可视化大屏, 看板, 图表排版, 血缘分析, 关联分析, 编辑数据集, 删除数据集.
-  Data storytelling is not implemented yet.
+  Use when the user mentions DataEase 数据源/数据集/数据大屏/仪表板/电子表格, datasource,
+  dataset, dataV, dashboard, spreadsheet, 新建数据源, 新建数据集, 计算字段, 维度指标, 大屏,
+  可视化大屏, 看板, 图表排版, 血缘分析, 关联分析, 编辑数据集, 删除数据集, 在线表格,
+  单元格公式, 条件格式. Data storytelling is not implemented yet.
 ---
 
 # DataEase V3 Skills
 
 通过 **Python3 + API Key** 操作 DataEase 3.x。适用于 **WorkBuddy、Cursor、Codex、Claude Code** 等 Agent。脚本在 `scripts/`（先 `cd scripts`）。
 
-**已实现：** 数据源；数据集新建；**数据大屏 dataV**；**仪表板 dashboard**  
+**已实现：** 数据源；数据集新建；**数据大屏 dataV**；**仪表板 dashboard**；**电子表格 spreadsheet**  
 **未实现：** 数据故事
 
 按需阅读（勿一次全读）：
@@ -30,7 +30,8 @@ description: >-
 | 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
 | 大屏构图 / 配色 / 组件一致性 | [references/datav_visual.md](references/datav_visual.md) |
 | 仪表板流程、矩阵布局、与 dataV 差异 | [references/dashboard.md](references/dashboard.md) |
-| 可复制命令 | [examples/datasource.md](examples/datasource.md)、[examples/dataset.md](examples/dataset.md)、[examples/datav.md](examples/datav.md)、[examples/dashboard.md](examples/dashboard.md) |
+| 电子表格新建/修改/发布、规格与条件格式 | [references/spreadsheet.md](references/spreadsheet.md) |
+| 可复制命令 | [examples/datasource.md](examples/datasource.md)、[examples/dataset.md](examples/dataset.md)、[examples/datav.md](examples/datav.md)、[examples/dashboard.md](examples/dashboard.md)、[examples/spreadsheet.md](examples/spreadsheet.md) |
 | 大屏美化示范（居中+底图提示词） | [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)（效果参考见 `assets/`；运行时生成图放用户工作区） |
 | 对外说明 | [README.md](README.md) |
 
@@ -39,7 +40,7 @@ description: >-
 1. **首次跑脚本前做 Python 环境检测**（详见 [references/common.md](references/common.md)）：查找 `python3` / `python` / Conda 环境（≥3.9）及 `requirements.txt` 依赖。缺失时可提议自动安装，但必须向用户说明将执行的命令与影响，**获得明确确认后再安装**；禁止静默安装。  
 2. **配置以对应 reference 为准**；不要传入未列出的 type / 字段 / 图表类型。  
 3. **插件数据源**：产品可能可见；本 skill 暂不支持其新建/改配置（查询仍可用）。  
-4. **文件夹用 id 或唯一名称**；同名（含子目录）必须列出候选并请用户确认。数据源 / 数据集 / **数据大屏** / **仪表板** 是四棵独立树，组织根 id 通常不同，勿混用。  
+4. **文件夹用 id 或唯一名称**；同名（含子目录）必须列出候选并请用户确认。数据源 / 数据集 / **数据大屏** / **仪表板** / **电子表格** 是五棵独立树，组织根 id 通常不同，勿混用。  
 5. **组织写入边界**：即使 Key 能访问其它组织，也不得在用户未允许的范围内增删改；推荐 `DE_ALLOWED_WRITE_SCOPE`（写大屏/仪表板时须含对应树允许节点）。  
 6. **Admin**：`whoami` 若账号为 `admin`，须先展示下方警告；建议改用数据分析师角色并先备份。  
 7. **删/改**：先提醒备份 → 说明风险与目标 → 用户明确确认后再执行（CLI 需确认开关）。**数据源删除为最严档：禁止自动删除**，须先列出其血缘引用，且**仅当用户完整输入口令「我确认删除此数据源，并已知风险、不会影响业务」**方可执行（`datasource.py delete --confirm-delete <完整口令>`），否则一律拒绝。    
@@ -53,6 +54,7 @@ description: >-
    - **仪表板**：亮色矩阵布局（`x/y/sizeX/sizeY`），勿用大屏像素坐标或暗色大屏主题。  
 10. **编辑/删除已有资源前必须血缘分析**（详见 [references/common.md](references/common.md)）：改动非本任务创建的数据集等资源前，先查下游引用（`relation.py get`；`dataset.py edit/delete` 已内置强制执行）。**有仪表板/数据大屏引用**：须向用户展示引用清单与风险（相关图表将不可用），**用户输入「确认修改」四字**后方可继续（`--confirm-modify 确认修改`），否则拒绝；**无下游引用**：仍须用户确认（`--yes`）；**当前任务新建且无外部操作**：可免提示继续（`--session-created`，仅限 Agent 能确认时）。
 11. 展示详情优先藏密码；JDBC 建议先 `validate`，需 schema 的类型先 `get-schema`。
+12. **电子表格边界**（详见 [references/spreadsheet.md](references/spreadsheet.md)）：支持新建与发布；**仅可修改当前任务内创建的电子表格**（`edit` 须 `--session-created`，否则拒绝）；**不支持修改已存在的电子表格**、不提供删除。规格（sheet / 单元格 / 公式 / 样式 / 条件格式）以 reference 为准，勿凭空编造字段。
 
 ## 【ADMIN 警告】（原样展示）
 
@@ -74,8 +76,10 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版 → 按 [datav_visual.md](references/datav_visual.md) 定主视觉/色板/外框 → 写 plan → `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
 
-**仪表板：** 理解需求 → 在 **仪表板树** `resolve-folder` → `datasets`/`fields` → `catalog`/`layouts`（矩阵模板）→ 写 plan → `apply` → `get` → 确认后 `publish`。见 [references/dashboard.md](references/dashboard.md)、[examples/dashboard.md](examples/dashboard.md)。
+**仪表板：** 理解需求 → 在 **仪表板树** `resolve-folder` → `datasets`/`fields` → `catalog`/`layouts`（矩阵模板）→ 写 plan → `apply` → `get` → 确认后 `publish`。见 [references/dashboard.md](references/dashboard.md)、[examples/dashboard.md](examples/dashboard.md)。  
+
+**电子表格：** 在**电子表格树** `resolve-folder` → 按需求写规格（sheet / 公式 / 样式 / 条件格式）→ `create` →（迭代 `edit --session-created`）→ 用户确认后 `publish`。见 [references/spreadsheet.md](references/spreadsheet.md)、[examples/spreadsheet.md](examples/spreadsheet.md)。
 
 ## 范围外
 
-数据故事；插件数据源新建/改配置；无确认的删改与数据集复用；未经完整口令的数据源删除；未授权组织/文件夹内的写入；未经用户确认的 Python/依赖安装；地图等强依赖地理资源配置的复杂项须用户提供必要配置后再做。
+数据故事；插件数据源新建/改配置；无确认的删改与数据集复用；未经完整口令的数据源删除；修改已存在的电子表格（仅可改本任务所建）；未授权组织/文件夹内的写入；未经用户确认的 Python/依赖安装；地图等强依赖地理资源配置的复杂项须用户提供必要配置后再做。

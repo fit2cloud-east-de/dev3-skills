@@ -199,7 +199,7 @@ def _walk_tree_index(
 
 
 def _tree_endpoint(kind: str) -> tuple[str, str]:
-    """返回 (path, busiFlag)。kind: datasource | dataset | dataV | dashboard。"""
+    """返回 (path, busiFlag)。kind: datasource | dataset | dataV | dashboard | spreadsheet。"""
     k = (kind or "datasource").strip().lower()
     if k == "dataset":
         return "/datasetTree/tree", "dataset"
@@ -209,8 +209,10 @@ def _tree_endpoint(kind: str) -> tuple[str, str]:
         return "/dataVisualization/tree", "dataV"
     if k in ("dashboard", "panel", "db"):
         return "/dataVisualization/tree", "dashboard"
+    if k == "spreadsheet":
+        return "/spreadsheet/tree", "spreadsheet"
     raise DataEaseClientError(
-        f"未知资源树 kind={kind}，仅支持 datasource / dataset / dataV / dashboard"
+        f"未知资源树 kind={kind}，仅支持 datasource / dataset / dataV / dashboard / spreadsheet"
     )
 
 
