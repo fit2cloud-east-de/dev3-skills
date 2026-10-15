@@ -173,14 +173,151 @@ def _style_to_univer(style: dict, *, name: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 规格编译：spec JSON → Univer IWorkbookData 快照
+# 规格编译：spec JSON → 工作簿快照
 # ---------------------------------------------------------------------------
 
+def _freeze_to_univer(freeze: Any) -> dict:
+    """'B2' → 冻结首行首列；或 {xSplit, ySplit, startRow, startColumn}。"""
+    if isinstance(freeze, str):
+        row, col = _ref_to_rc(freeze)
+        return {"xSplit": col, "ySplit": row, "startRow": row, "startColumn": col}
+    if isinstance(freeze, dict) and {"xSplit", "ySplit", "startRow", "startColumn"} <= set(freeze):
+        return {
+            "xSplit": int(freeze["xSplit"]),
+            "ySplit": int(freeze["ySplit"]),
+            "startRow": int(freeze["startRow"]),
+            "startColumn": int(freeze["startColumn"]),
+        }
+    raise DataEaseClientError(f"freeze 须为单元格引用（如 'B2'）或 {{xSplit,ySplit,startRow,startColumn}}，收到: {freeze!r}")
+
+
+def _build_rich_text(runs: list) -> dict:
+    """[{text, style}] → 单元格富文本文档（cell.p）。"""
+    if not isinstance(runs, list) or not runs:
+        raise DataEaseClientError("richText 须为非空数组 [{text, style}]")
+    text = "".join(str(r.get("text", "")) for r in runs)
+    if not text:
+        raise DataEaseClientError("richText 所有分段均为空")
+    data_stream = text + "\r\n"
+    text_runs = []
+    offset = 0
+    for i, r in enumerate(runs):
+        seg = str(r.get("text", ""))
+        ts = _style_to_univer(r.get("style") or {}, name=f"richText[{i}]")
+        if ts:
+            text_runs.append({"st": offset, "ed": offset + len(seg), "ts": ts})
+        offset += len(seg)
+    body: dict = {"dataStream": data_stream}
+    if text_runs:
+        body["textRuns"] = text_runs
+    body["paragraphs"] = [{"startIndex": max(len(text), 0)}]
+    return {
+        "id": f"doc_{uuid.uuid4().hex[:12]}",
+        "body": body,
+        "documentStyle": {},
+    }
+
+
+def _compile_validation(item: dict, sheet_id: str, idx: int) -> dict:
+    """数据验证 DSL → 内核规则。"""
+    vt = item.get("type")
+    dv_types = (
+        "list", "listMultiple", "decimal", "whole", "textLength",
+        "date", "time", "checkbox", "custom", "any",
+    )
+    if vt not in dv_types:
+        raise DataEaseClientError(
+            f"validations[{idx}] type 须为 {dv_types} 之一，收到: {vt!r}"
+        )
+    rule: dict = {
+        "uid": f"dv_{uuid.uuid4().hex[:16]}",
+        "type": vt,
+        "ranges": [_range_to_irange(str(item.get("range") or "A1"))],
+    }
+    op = item.get("operator")
+    if op:
+        rule["operator"] = op
+    formula1 = item.get("formula1") or item.get("formula")
+    if formula1 is None and item.get("values") is not None:
+        vals = item["values"]
+        if vt in ("list", "listMultiple"):
+            formula1 = '"' + ",".join(str(v) for v in vals) + '"'
+        elif isinstance(vals, (list, tuple)):
+            if len(vals) >= 2:
+                formula1, formula2 = str(vals[0]), str(vals[1])
+                rule["formula1"], rule["formula2"] = formula1, formula2
+            else:
+                formula1 = str(vals[0])
+        else:
+            formula1 = str(vals)
+    if formula1 is not None:
+        rule.setdefault("formula1", str(formula1))
+    if item.get("values2") is not None:
+        rule.setdefault("formula2", str(item["values2"]))
+    rule.setdefault("allowBlank", bool(item.get("allowBlank", True)))
+    if item.get("promptTitle") or item.get("prompt"):
+        rule["showInputMessage"] = True
+        if item.get("promptTitle"):
+            rule["promptTitle"] = item["promptTitle"]
+        if item.get("prompt"):
+            rule["prompt"] = item["prompt"]
+    if item.get("errorTitle") or item.get("error"):
+        rule["showErrorMessage"] = True
+        if item.get("errorTitle"):
+            rule["errorTitle"] = item["errorTitle"]
+        if item.get("error"):
+            rule["error"] = item["error"]
+    return rule
+
+
+def _compile_filter_columns(columns: list, base_range: dict, idx: int) -> list:
+    """筛选列 DSL → filterColumns。col 为绝对列标（如 'B'），colId 为范围内偏移。"""
+    out = []
+    for ci, col_spec in enumerate(columns or []):
+        col_letter = str(col_spec.get("col") or "")
+        if ":" in col_letter:
+            raise DataEaseClientError(f"filters[{idx}].columns[{ci}] col 不支持区间，单列单条")
+        col_abs = _col_letters_to_index(col_letter)
+        offset = col_abs - base_range["startColumn"]
+        if offset < 0 or offset > (base_range["endColumn"] - base_range["startColumn"]):
+            raise DataEaseClientError(
+                f"filters[{idx}].columns[{ci}] 列 {col_letter} 不在筛选范围内"
+            )
+        entry: dict = {"colId": offset}
+        if col_spec.get("values") is not None:
+            entry["filters"] = {"filters": [str(v) for v in col_spec["values"]]}
+        if col_spec.get("blank") is True:
+            entry.setdefault("filters", {})["blank"] = True
+        custom = col_spec.get("custom")
+        if custom:
+            conds = custom if isinstance(custom, list) else [custom]
+            compiled = [
+                {"val": c.get("val"), **({"operator": c["operator"]} if c.get("operator") else {})}
+                for c in conds
+            ]
+            if not compiled:
+                raise DataEaseClientError(f"filters[{idx}].columns[{ci}] custom 条件为空")
+            entry["customFilters"] = {
+                "and": 1 if isinstance(custom, dict) and custom.get("and") else None,
+                "customFilters": compiled,
+            }
+            entry["customFilters"] = {
+                k: v for k, v in entry["customFilters"].items() if v is not None
+            }
+        if "filters" not in entry and "customFilters" not in entry:
+            raise DataEaseClientError(
+                f"filters[{idx}].columns[{ci}] 须提供 values / blank / custom 之一"
+            )
+        out.append(entry)
+    return out
+
+
 def compile_workbook(spec: dict) -> dict:
-    """将简化规格编译为 Univer IWorkbookData。
+    """将简化规格编译为工作簿快照。
 
     spec 结构见 references/spreadsheet.md：
-    {styles: {名: 样式}, sheets: [{name, cells, merges, ...}], conditionalFormats: [...]}
+    {styles, sheets: [{name, cells, merges, freeze, ...}], conditionalFormats,
+     validations, filters, notes, slashCells, datasetTables}
     """
     if not isinstance(spec, dict):
         raise DataEaseClientError("规格须为 JSON 对象")
@@ -242,6 +379,10 @@ def compile_workbook(spec: dict) -> dict:
                 target["s"] = f"s_{sname}"
             elif isinstance(cell.get("inlineStyle"), dict):
                 target["s"] = _style_to_univer(cell["inlineStyle"], name=f"{ref}#inline")
+            if isinstance(cell.get("richText"), list):
+                if "v" in target or "f" in target:
+                    raise DataEaseClientError(f"单元格 {ref}: richText 与 v/f 互斥")
+                target["p"] = _build_rich_text(cell["richText"])
             if cell.get("type") == "text":
                 target["t"] = 4  # CellValueType.FORCE_STRING：强制文本（保留前导零等）
             elif cell.get("type") == "number":
@@ -269,7 +410,7 @@ def compile_workbook(spec: dict) -> dict:
             for r in rows:
                 row_data[str(r - 1)] = {"h": int(h)}
 
-        sheets[sid] = {
+        sheet_obj: dict = {
             "id": sid,
             "name": name,
             "rowCount": row_count,
@@ -283,12 +424,20 @@ def compile_workbook(spec: dict) -> dict:
             "cellData": cell_data,
             "columnData": column_data,
             "rowData": row_data,
-            "showGridlines": 1,
+            "showGridlines": 0 if sh.get("showGridlines") is False else 1,
             "rowHeader": {"width": 46, "hidden": 0},
             "columnHeader": {"height": 20, "hidden": 0},
             "selections": ["A1"],
-            "rightToLeft": 0,
+            "rightToLeft": 1 if sh.get("rightToLeft") else 0,
         }
+        if sh.get("freeze"):
+            sheet_obj["freeze"] = _freeze_to_univer(sh["freeze"])
+        if sh.get("hidden"):
+            sheet_obj["hidden"] = 1
+        tab_color = _normalize_color(sh.get("tabColor"))
+        if tab_color:
+            sheet_obj["tabColor"] = tab_color["rgb"]
+        sheets[sid] = sheet_obj
         sheet_order.append(sid)
 
     workbook: dict = {
@@ -300,16 +449,27 @@ def compile_workbook(spec: dict) -> dict:
         "sheets": sheets,
     }
 
-    # 条件格式 → resources[SHEET_CONDITIONAL_FORMATTING_PLUGIN]
+    resources: list[dict] = []
+    unit_id = "workbook-01"
+
+    def _sheet_id_of(section: str, i: int, default_first: bool = False) -> str:
+        sheet_name = str(spec_item_sheet(section, i, default_first))
+        if sheet_name not in sheet_id_by_name:
+            raise DataEaseClientError(
+                f"{section}[{i}] 引用未知 sheet「{sheet_name}」。已有: {sorted(sheet_id_by_name)}"
+            )
+        return sheet_id_by_name[sheet_name]
+
+    def spec_item_sheet(section: str, i: int, default_first: bool = False) -> Any:
+        item = spec.get(section)[i]
+        return item.get("sheet") or (sheets_spec[0].get("name") if default_first and sheets_spec else None)
+
+    # --- 条件格式 → SHEET_CONDITIONAL_FORMATTING_PLUGIN ({unitId: {sheetId: [rules]}}) ---
     cf_spec = spec.get("conditionalFormats") or []
     if cf_spec:
         rules_by_sheet: dict[str, list] = {}
         for i, item in enumerate(cf_spec):
-            sheet_name = str(item.get("sheet") or sheets_spec[0].get("name"))
-            if sheet_name not in sheet_id_by_name:
-                raise DataEaseClientError(
-                    f"conditionalFormats[{i}] 引用未知 sheet「{sheet_name}」。已有: {sorted(sheet_id_by_name)}"
-                )
+            sid = _sheet_id_of("conditionalFormats", i, default_first=True)
             rule_dsl = item.get("rule")
             if not isinstance(rule_dsl, dict):
                 raise DataEaseClientError(f"conditionalFormats[{i}] 缺少 rule")
@@ -317,7 +477,7 @@ def compile_workbook(spec: dict) -> dict:
             if rule.get("type") == "highlightCell" and isinstance(rule.get("style"), dict):
                 rule["style"] = _style_to_univer(rule["style"], name=f"cf[{i}]")
             irange = _range_to_irange(str(item.get("range") or item.get("ranges") or "A1"))
-            rules_by_sheet.setdefault(sheet_id_by_name[sheet_name], []).append(
+            rules_by_sheet.setdefault(sid, []).append(
                 {
                     "cfId": f"cf_{uuid.uuid4().hex[:16]}",
                     "ranges": [irange],
@@ -325,14 +485,134 @@ def compile_workbook(spec: dict) -> dict:
                     "rule": rule,
                 }
             )
-        workbook["resources"] = [
+        resources.append(
             {
                 "name": CF_RESOURCE_NAME,
-                "data": json.dumps(
-                    {"workbook-01": rules_by_sheet}, ensure_ascii=False, separators=(",", ":")
-                ),
+                "data": json.dumps({unit_id: rules_by_sheet}, ensure_ascii=False, separators=(",", ":")),
             }
-        ]
+        )
+
+    # --- 数据验证 → SHEET_DATA_VALIDATION_PLUGIN ({sheetId: [rules]}) ---
+    dv_spec = spec.get("validations") or []
+    if dv_spec:
+        dv_by_sheet: dict[str, list] = {}
+        for i, item in enumerate(dv_spec):
+            sid = _sheet_id_of("validations", i, default_first=True)
+            dv_by_sheet.setdefault(sid, []).append(_compile_validation(item, sid, i))
+        resources.append(
+            {
+                "name": "SHEET_DATA_VALIDATION_PLUGIN",
+                "data": json.dumps(dv_by_sheet, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # --- 自动筛选 → SHEET_FILTER_PLUGIN ({sheetId: {ref, filterColumns}}) ---
+    fl_spec = spec.get("filters") or []
+    if fl_spec:
+        fl_by_sheet: dict[str, dict] = {}
+        for i, item in enumerate(fl_spec):
+            sid = _sheet_id_of("filters", i, default_first=True)
+            ref = _range_to_irange(str(item.get("range") or "A1"))
+            fl_by_sheet[sid] = {
+                "ref": ref,
+                "filterColumns": _compile_filter_columns(item.get("columns") or [], ref, i),
+            }
+        resources.append(
+            {
+                "name": "SHEET_FILTER_PLUGIN",
+                "data": json.dumps(fl_by_sheet, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # --- 批注 → SHEET_NOTE_PLUGIN ({sheetId: {row: {col: note}}}) ---
+    note_spec = spec.get("notes") or []
+    if note_spec:
+        note_by_sheet: dict[str, dict] = {}
+        for i, item in enumerate(note_spec):
+            sid = _sheet_id_of("notes", i, default_first=True)
+            row, col = _ref_to_rc(str(item.get("cell") or "A1"))
+            note_by_sheet.setdefault(sid, {}).setdefault(str(row), {})[str(col)] = {
+                "id": f"note_{uuid.uuid4().hex[:12]}",
+                "row": row,
+                "col": col,
+                "width": int(item.get("width") or 160),
+                "height": int(item.get("height") or 120),
+                "note": str(item.get("text") or ""),
+                "show": False,
+            }
+        resources.append(
+            {
+                "name": "SHEET_NOTE_PLUGIN",
+                "data": json.dumps(note_by_sheet, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # --- 斜线格 → SHEET_DATAEASE_SLASH_CELL_PLUGIN ([items]) ---
+    slash_spec = spec.get("slashCells") or []
+    if slash_spec:
+        slash_items = []
+        for i, item in enumerate(slash_spec):
+            sid = _sheet_id_of("slashCells", i, default_first=True)
+            row, col = _ref_to_rc(str(item.get("cell") or "A1"))
+            st = item.get("type") or "two"
+            if st not in ("two", "three"):
+                raise DataEaseClientError(f"slashCells[{i}] type 须为 two / three")
+            slash_items.append(
+                {"unitId": unit_id, "sheetId": sid, "row": row, "col": col, "type": st}
+            )
+        resources.append(
+            {
+                "name": "SHEET_DATAEASE_SLASH_CELL_PLUGIN",
+                "data": json.dumps(slash_items, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # --- 明细表（数据集绑定）→ SHEET_DATAEASE_DETAIL_TABLE_PLUGIN ([configs]) ---
+    dt_spec = spec.get("datasetTables") or []
+    if dt_spec:
+        dt_configs = []
+        for i, item in enumerate(dt_spec):
+            if not item.get("datasetId"):
+                raise DataEaseClientError(f"datasetTables[{i}] 缺少 datasetId")
+            sid = _sheet_id_of("datasetTables", i, default_first=True)
+            dt_configs.append(
+                {
+                    "id": f"detail_{uuid.uuid4().hex[:12]}",
+                    "type": "detail",
+                    "data": {
+                        "datasetId": str(item["datasetId"]),
+                        "zones": {"fields": item.get("fields") or []},
+                        "customFilter": item.get("customFilter") or {},
+                        "queryFilter": [],
+                        "resultLimit": int(item.get("resultLimit") or 100),
+                    },
+                    "placement": {
+                        "sheetId": sid,
+                        "sheetName": next(
+                            s["name"] for s_id, s in sheets.items() if s_id == sid
+                        ),
+                        "startCell": str(item.get("startCell") or "A1"),
+                    },
+                    "style": {
+                        "base": {
+                            "customBlockName": bool(item.get("blockName")),
+                            "blockName": str(item.get("blockName") or ""),
+                            "hideHeader": bool(item.get("hideHeader")),
+                            "mergeCell": bool(item.get("mergeCell")),
+                        }
+                    },
+                    "senior": {},
+                }
+            )
+        resources.append(
+            {
+                "name": "SHEET_DATAEASE_DETAIL_TABLE_PLUGIN",
+                "data": json.dumps(dt_configs, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    if resources:
+        workbook["resources"] = resources
 
     return workbook
 
@@ -441,7 +721,7 @@ def cmd_publish(client: DataEaseClient, args: argparse.Namespace) -> None:
 
 
 def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
-    """输出可编辑的规格模板。"""
+    """输出可编辑的规格模板（覆盖主要能力）。"""
     tpl = {
         "styles": {
             "title": {
@@ -451,41 +731,73 @@ def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
             },
             "num2": {"numberFormat": "#,##0.00"},
             "pct": {"numberFormat": "0.0%"},
-            "warn": {"color": "#CC0000", "bold": True, "bg": "#FFE0E0"},
         },
         "sheets": [
             {
                 "name": "Sheet1",
                 "rowCount": 200,
                 "columnCount": 12,
+                "freeze": "A2",
+                "tabColor": "#4472C4",
                 "columnWidths": {"A": 120, "B:D": 90},
                 "rowHeights": {"1": 32},
                 "merges": ["A1:D1"],
                 "cells": {
                     "A1": {"v": "销售汇总", "style": "title"},
-                    "A2": {"v": "产品"},
-                    "B2": {"v": "销售额", "style": "num2"},
+                    "A2": {"v": "产品"}, "B2": {"v": "销售额", "style": "num2"},
                     "A3": {"v": "产品A"}, "B3": {"v": 1200.5, "style": "num2"},
                     "A4": {"v": "产品B"}, "B4": {"v": 890.25, "style": "num2"},
                     "B5": {"f": "=SUM(B3:B4)", "style": "num2"},
                     "C3": {"v": 0.82, "style": "pct"},
                     "D3": {"v": "0012", "type": "text"},
+                    "E1": {"richText": [
+                        {"text": "重点", "style": {"color": "#CC0000", "bold": True}},
+                        {"text": "说明", "style": {"italic": True}},
+                    ]},
                 },
             },
         ],
         "conditionalFormats": [
             {
-                "sheet": "Sheet1",
-                "range": "B3:B5",
-                "stopIfTrue": False,
+                "sheet": "Sheet1", "range": "B3:B5",
                 "rule": {
-                    "type": "highlightCell",
-                    "subType": "number",
-                    "operator": "greaterThan",
-                    "value": 1000,
+                    "type": "highlightCell", "subType": "number",
+                    "operator": "greaterThan", "value": 1000,
                     "style": {"bg": "#FFE0E0", "color": "#CC0000", "bold": True},
                 },
             },
+        ],
+        "validations": [
+            {
+                "sheet": "Sheet1", "range": "D3:D20", "type": "list",
+                "values": ["0012", "0013", "0014"],
+                "promptTitle": "编码", "prompt": "从下拉列表选择",
+            },
+            {
+                "sheet": "Sheet1", "range": "B3:B100", "type": "decimal",
+                "operator": "greaterThanOrEqual", "values": [0],
+                "errorTitle": "非法输入", "error": "销售额须 ≥ 0",
+            },
+        ],
+        "filters": [
+            {
+                "sheet": "Sheet1", "range": "A2:D100",
+                "columns": [{"col": "A", "values": ["产品A"]}],
+            }
+        ],
+        "notes": [{"sheet": "Sheet1", "cell": "A1", "text": "表头行已冻结"}],
+        "slashCells": [{"sheet": "Sheet1", "cell": "F1", "type": "two"}],
+        "datasetTables": [
+            {
+                "sheet": "Sheet1", "startCell": "H2", "datasetId": "<数据集ID>",
+                "resultLimit": 100,
+                "fields": [
+                    {
+                        "id": "<字段ID>", "name": "<字段名>", "dataeaseName": "<f_xxxx>",
+                        "groupType": "d", "deType": 0,
+                    }
+                ],
+            }
         ],
     }
     _print_json(tpl)
