@@ -57,6 +57,14 @@ python spreadsheet.py template > spec.json
     {"sheet": "销售明细", "startCell": "A7", "datasetId": "<数据集ID>", "resultLimit": 100,
      "blockName": "明细数据", "fields": [{"id": "<字段ID>", "name": "<字段名>",
        "dataeaseName": "<f_xxxx>", "groupType": "d", "deType": 0, "extField": 0}]}
+  ],
+  "filterComponents": [
+    {"sheet": "销售明细", "startCell": "A1", "conditions": [
+      {"name": "下单日期", "fieldId": "<日期字段ID>", "fieldName": "下单日期",
+       "groupType": "d", "deType": 0, "displayType": "time", "granularity": "date"},
+      {"name": "客户名称", "fieldId": "<文本字段ID>", "fieldName": "客户名称",
+       "groupType": "d", "deType": 0, "displayType": "textSelect", "multiple": true}
+    ]}
   ]
 }
 ```

@@ -35,6 +35,7 @@
 | `notes` | `数组` | 批注（纯文本） |
 | `slashCells` | `数组` | 斜线格（二分/三分） |
 | `datasetTables` | `数组` | 明细表：把数据集字段绑定到某起始格渲染 |
+| `filterComponents` | `数组` | 查询组件：按时间（年/月/日）或文本下拉过滤明细表，至多一条（工作簿级单例） |
 
 ### sheets[] 工作表
 
@@ -148,11 +149,36 @@
 
 **注意**：明细表引用已有数据集属**读取**行为，不修改数据集；但修改/删除该数据集会导致表格渲染失败，删改前仍须遵守[common.md](common.md)的血缘分析与确认流程，并在风险说明中提及此表格。
 
+## filterComponents 查询组件
+
+查询组件按条件过滤**明细表**（须先在 `datasetTables` 绑定数据集）。工作簿级单例，`conditions` 支持多条件：
+
+```json
+{
+  "sheet": "Sheet1", "startCell": "A1", "visible": true,
+  "conditions": [
+    {"name": "下单日期", "fieldId": "<日期字段ID>", "fieldName": "下单日期",
+     "groupType": "d", "deType": 0, "displayType": "time", "granularity": "date"},
+    {"name": "客户名称", "fieldId": "<文本字段ID>", "fieldName": "客户名称",
+     "groupType": "d", "deType": 0, "displayType": "textSelect", "multiple": true}
+  ]
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `displayType` | `time` 时间过滤（可按年/月/日选）；`textSelect` 文本下拉；`numberRange` 数值区间等 |
+| `granularity` | 时间粒度：`year` / `month` / `date`（日）/ `datetime` |
+| `multiple` | 文本下拉是否多选 |
+| `linkPlugin` | 可选：仅关联指定 `blockName` 的明细表；缺省关联全部明细表 |
+
+`fieldId/fieldName/groupType/deType` 取自明细表所绑数据集的字段（`dataset.py get` 同源）。可选 `required`。高级样式（配色/按钮/布局微调）请在产品界面调整。
+
 ---
 
 ## 范围外（请用户在产品界面操作）
 
-超链接（富文本链接）、透视表、表格内查询/过滤组件、单元格图片与浮动图片、明细表/透视表的高级样式（表头/斑马纹/汇总行等）。
+超链接（富文本链接）、透视表、单元格图片与浮动图片、明细表/透视表的高级样式（表头/斑马纹/汇总行等）、查询组件的高级样式。
 
 ## 接口
 

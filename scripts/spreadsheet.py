@@ -569,15 +569,21 @@ def compile_workbook(spec: dict) -> dict:
 
     # --- 明细表（数据集绑定）→ SHEET_DATAEASE_DETAIL_TABLE_PLUGIN ([configs]) ---
     dt_spec = spec.get("datasetTables") or []
+    dt_infos: list[dict] = []
     if dt_spec:
         dt_configs = []
         for i, item in enumerate(dt_spec):
             if not item.get("datasetId"):
                 raise DataEaseClientError(f"datasetTables[{i}] 缺少 datasetId")
             sid = _sheet_id_of("datasetTables", i, default_first=True)
+            dt_id = f"detail_{uuid.uuid4().hex[:12]}"
+            block_name = str(item.get("blockName") or "")
+            dt_infos.append(
+                {"id": dt_id, "blockName": block_name, "datasetId": str(item["datasetId"])}
+            )
             dt_configs.append(
                 {
-                    "id": f"detail_{uuid.uuid4().hex[:12]}",
+                    "id": dt_id,
                     "type": "detail",
                     "data": {
                         "datasetId": str(item["datasetId"]),
@@ -595,8 +601,8 @@ def compile_workbook(spec: dict) -> dict:
                     },
                     "style": {
                         "base": {
-                            "customBlockName": bool(item.get("blockName")),
-                            "blockName": str(item.get("blockName") or ""),
+                            "customBlockName": bool(block_name),
+                            "blockName": block_name,
                             "hideHeader": bool(item.get("hideHeader")),
                             "mergeCell": bool(item.get("mergeCell")),
                         }
@@ -608,6 +614,126 @@ def compile_workbook(spec: dict) -> dict:
             {
                 "name": "SHEET_DATAEASE_DETAIL_TABLE_PLUGIN",
                 "data": json.dumps(dt_configs, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # --- 查询组件 → SHEET_DATAEASE_FILTER_PLUGIN（单对象 config）---
+    fc_spec = spec.get("filterComponents") or []
+    if fc_spec:
+        if len(fc_spec) > 1:
+            raise DataEaseClientError("filterComponents 至多一条（查询组件为工作簿级单例）")
+        item = fc_spec[0]
+        sid = _sheet_id_of("filterComponents", 0, default_first=True)
+        conditions = []
+        for ci, cond in enumerate(item.get("conditions") or []):
+            if not cond.get("fieldId") or not cond.get("fieldName"):
+                raise DataEaseClientError(
+                    f"filterComponents[0].conditions[{ci}] 缺少 fieldId / fieldName"
+                )
+            display_type = cond.get("displayType") or (
+                "time" if cond.get("granularity") else "textSelect"
+            )
+            c: dict = {
+                "id": f"condition_{uuid.uuid4().hex[:12]}",
+                "name": str(cond.get("name") or cond["fieldName"]),
+                "visible": cond.get("visible", True),
+                "required": bool(cond.get("required")),
+                "displayType": display_type,
+                "optionSource": cond.get("optionSource") or "auto",
+                "queryFieldId": str(cond["fieldId"]),
+                "queryFieldName": str(cond["fieldName"]),
+                "linkedFields": [],
+            }
+            if display_type == "time":
+                granularity = cond.get("granularity") or "date"
+                if granularity not in ("year", "month", "date", "datetime"):
+                    raise DataEaseClientError(
+                        f"filterComponents conditions[{ci}] granularity 须为 year/month/date/datetime"
+                    )
+                c["timeGranularity"] = granularity
+            if cond.get("multiple"):
+                c["multiple"] = True
+            # 关联明细表：linkPlugin 指定 blockName/明细表标识，缺省关联全部明细表
+            targets = dt_infos
+            link = cond.get("linkPlugin")
+            if link:
+                targets = [t for t in dt_infos if t["blockName"] == link or t["id"] == link]
+                if not targets:
+                    raise DataEaseClientError(
+                        f"filterComponents conditions[{ci}] linkPlugin「{link}」未匹配任何明细表"
+                    )
+            for t in targets:
+                c["linkedFields"].append(
+                    {
+                        "pluginId": t["id"],
+                        "pluginName": t["blockName"] or "明细表",
+                        "fieldId": str(cond["fieldId"]),
+                        "fieldName": str(cond["fieldName"]),
+                        "datasetId": t["datasetId"],
+                        "groupType": cond.get("groupType") or "d",
+                        "deType": cond.get("deType") if cond.get("deType") is not None else 0,
+                    }
+                )
+            if not c["linkedFields"]:
+                raise DataEaseClientError(
+                    f"filterComponents conditions[{ci}] 无可关联明细表：请先在 datasetTables 中绑定数据集"
+                )
+            conditions.append(c)
+        fc_config: dict = {
+            "id": "spreadsheet_filter",
+            "type": "filter",
+            "visible": item.get("visible", True),
+            "placement": {
+                "sheetId": sid,
+                "sheetName": next(s["name"] for s_id, s in sheets.items() if s_id == sid),
+                "startCell": str(item.get("startCell") or "A1"),
+            },
+            "conditions": conditions,
+            "style": {
+                "base": {
+                    "paddingMode": "uniform",
+                    "padding": {"top": 16, "right": 16, "bottom": 16, "left": 16},
+                    "radius": 0,
+                    "backgroundEnabled": False,
+                    "backgroundColor": "#ffffff",
+                    "layout": "horizontal",
+                    "align": "left",
+                    "gap": 16,
+                },
+                "condition": {
+                    "fillEnabled": False,
+                    "fillColor": "#ffffff",
+                    "borderEnabled": False,
+                    "borderColor": "#d9dcdf",
+                    "borderWidth": 1,
+                    "color": "#1f2329",
+                    "fontSize": 12,
+                    "fontWeight": "normal",
+                    "fontStyle": "normal",
+                },
+                "conditionName": {
+                    "show": True,
+                    "position": "top",
+                    "color": "#1f2329",
+                    "fontSize": 12,
+                    "fontWeight": "normal",
+                    "fontStyle": "normal",
+                    "gap": 8,
+                },
+                "button": {
+                    "btnList": ["sure"],
+                    "primaryColor": "#3370ff",
+                    "textColor": "#ffffff",
+                    "fontSize": 12,
+                    "fontWeight": "normal",
+                    "fontStyle": "normal",
+                },
+            },
+        }
+        resources.append(
+            {
+                "name": "SHEET_DATAEASE_FILTER_PLUGIN",
+                "data": json.dumps(fc_config, ensure_ascii=False, separators=(",", ":")),
             }
         )
 
@@ -795,6 +921,18 @@ def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
                     {
                         "id": "<字段ID>", "name": "<字段名>", "dataeaseName": "<f_xxxx>",
                         "groupType": "d", "deType": 0,
+                    }
+                ],
+            }
+        ],
+        "filterComponents": [
+            {
+                "sheet": "Sheet1", "startCell": "A1",
+                "conditions": [
+                    {
+                        "name": "下单日期", "fieldId": "<日期字段ID>", "fieldName": "下单日期",
+                        "groupType": "d", "deType": 0,
+                        "displayType": "time", "granularity": "date",
                     }
                 ],
             }
