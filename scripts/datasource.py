@@ -87,6 +87,10 @@ DELETE_RISK = """\
 - 文件夹删除会影响其下资源（需确认）。
 """
 
+# 数据源删除唯一口令：用户须完整输入方可删除，禁止自动删除
+DS_DELETE_PHRASE = "我确认删除此数据源，并已知风险、不会影响业务"
+
+
 
 def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2))
@@ -707,22 +711,36 @@ def cmd_update(client: DataEaseClient, args: argparse.Namespace) -> None:
 
 
 def cmd_delete(client: DataEaseClient, args: argparse.Namespace) -> None:
+    """删除数据源：强制血缘分析 + 用户完整口令确认；禁止自动删除。"""
     _remind_backup_and_admin(client, mutating=True)
-    if not args.i_confirm_delete:
-        print(DELETE_RISK, file=sys.stderr)
-        raise DataEaseClientError(
-            "删除需二次确认：请向用户提醒备份与风险，用户确认「已备份且同意删除」后使用 --i-confirm-delete"
-        )
-    print(DELETE_RISK, file=sys.stderr)
     _assert_within_write_scope(client, args.id, role="删除目标")
-    in_use = client.post(f"/datasource/perDelete/{args.id}", {})
-    if in_use and not args.force_even_if_used:
-        raise DataEaseClientError(
-            "perDelete=true：仍有数据集正在使用此数据源。若用户仍坚持删除，"
-            "需再次确认后加 --force-even-if-used --i-confirm-delete"
+
+    # 1) 强制血缘分析：列出下游数据集与看板（只读）
+    from relation import relation_gate
+
+    summary = relation_gate(client, "datasource", args.id)
+    print(DELETE_RISK, file=sys.stderr)
+    if summary.get("hasVisualUsage"):
+        print(
+            "警告：仍有仪表板/数据大屏依赖此数据源（清单见上），删除将导致其中图表不可用。",
+            file=sys.stderr,
         )
+
+    # 2) 完整口令确认：唯一放行条件
+    if (args.confirm_delete or "").strip() != DS_DELETE_PHRASE:
+        raise DataEaseClientError(
+            "本 skill 禁止自动删除数据源。已向用户展示血缘关系与风险说明，"
+            f"仅当用户完整输入口令「{DS_DELETE_PHRASE}」后方可继续，"
+            "确认后重试并附加 --confirm-delete <完整口令>"
+        )
+
+    # 3) 引用兜底提示后删除
+    in_use = client.post(f"/datasource/perDelete/{args.id}", {})
     if in_use:
-        print("警告: 仍有数据集引用该数据源，按用户确认强制删除。", file=sys.stderr)
+        print(
+            "警告: perDelete 显示仍有数据集引用该数据源，按用户完整口令确认继续删除。",
+            file=sys.stderr,
+        )
     body = {"id": args.id}
     if args.root_org_node:
         body["rootOrgNode"] = True
@@ -876,10 +894,13 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--i-confirm-update", action="store_true")
     u.set_defaults(func=cmd_update)
 
-    d = sub.add_parser("delete", help="删除数据源（需确认）")
+    d = sub.add_parser("delete", help="删除数据源（强制血缘分析；须用户完整口令确认，禁止自动删除）")
     d.add_argument("--id", required=True)
-    d.add_argument("--i-confirm-delete", action="store_true")
-    d.add_argument("--force-even-if-used", action="store_true")
+    d.add_argument(
+        "--confirm-delete",
+        default=None,
+        help="删除口令：用户须完整输入「我确认删除此数据源，并已知风险、不会影响业务」",
+    )
     d.add_argument("--root-org-node", action="store_true")
     d.set_defaults(func=cmd_delete)
 

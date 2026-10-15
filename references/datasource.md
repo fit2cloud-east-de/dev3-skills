@@ -165,6 +165,17 @@ configuration 对象（编码前）：
 
 ---
 
+## 删除数据源（最严档确认）
+
+`datasource.py delete` 执行时**自动做血缘分析并列出**下游数据集与仪表板/数据大屏引用，然后要求确认：
+
+- **禁止自动删除**。唯一放行条件：用户完整输入口令
+
+  > 我确认删除此数据源，并已知风险、不会影响业务
+
+- 确认后重试并附加 `--confirm-delete <完整口令>`；口令不完整或缺失一律拒绝。
+- 仍有数据集/看板引用时，会先展示引用清单并警告「相关图表将不可用」。
+
 ## 查询类接口
 
 | 方法 | 路径 | 说明 |
@@ -179,6 +190,7 @@ configuration 对象（编码前）：
 | POST | /de2api/datasource/getTables | `{ datasourceId }` |
 | POST | /de2api/datasource/checkRepeat | 是否重复连接 |
 | POST | /de2api/datasource/perDelete/{id} | 是否有数据集占用 |
+| POST | /de2api/relation/datasource/{id} | 血缘分析（建议用 `relation.py`，已适配） |
 | POST | /de2api/datasource/delete | `{ id, rootOrgNode? }` |
 
 ---

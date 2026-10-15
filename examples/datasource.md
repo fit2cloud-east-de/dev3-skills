@@ -69,7 +69,15 @@ python datasource.py save --file oracle.json --validate-first
 ```bash
 python datasource.py get --id <ID> --hide-pw --decode
 python datasource.py update --i-confirm-update --id <ID> --file oracle.json --validate-first
-python datasource.py delete --id <ID> --i-confirm-delete
+```
+
+删除数据源为最严档：自动血缘分析并列出引用，**禁止自动删除**，仅当用户完整输入口令后放行：
+
+```bash
+python datasource.py delete --id <ID>
+# 会先列出下游数据集/看板并要求口令，用户确认后：
+python datasource.py delete --id <ID> \
+  --confirm-delete "我确认删除此数据源，并已知风险、不会影响业务"
 ```
 
 ## 文件夹
