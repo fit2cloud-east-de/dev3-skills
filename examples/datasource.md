@@ -87,3 +87,14 @@ python datasource.py create-folder --name "项目A" --pid <父文件夹ID>
 # 或
 python datasource.py create-folder --name "项目A" --folder-name "唯一父目录名"
 ```
+
+## 本地 Excel
+
+```bash
+# 1) 上传并生成 save 载荷
+python datasource.py upload-excel --file 报表.xlsx --name "销售报表" --out excel_payload.json
+# 2) 保存为数据源（目标文件夹须在数据源树解析）
+python datasource.py save --file excel_payload.json --folder-name "目标文件夹"
+# 3) 自测：取表
+python datasource.py get-tables --id <新建数据源ID>
+```

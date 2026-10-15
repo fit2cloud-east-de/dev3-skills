@@ -137,9 +137,10 @@
 
 ## Excel（本地）
 
-1. `POST /de2api/datasource/uploadFile`（multipart：`file`, `id`, `editType`）解析 sheet  
-2. 将返回结构写入 `configuration`（含 sheets / fields）后 Base64  
-3. `save` / `update`
+1. `datasource.py upload-excel --file <本地.xlsx> [--name 名称] [--out payload.json]`
+   - 内部调用 `POST /de2api/datasource/uploadFile`（multipart：`file`, `id`, `editType`）解析 sheet
+   - 自动清空 sheet 内嵌数据并组装 create 载荷（`type: "Excel"`, `editType: 0`, `configuration: sheets`）
+2. `datasource.py save --file payload.json --pid <文件夹ID>`（或 `--folder-name`）
 
 必须先上传文件，不能仅凭空 JSON 新建。
 

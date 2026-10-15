@@ -773,6 +773,69 @@ def cmd_create_folder(client: DataEaseClient, args: argparse.Namespace) -> None:
     _print_json(data)
 
 
+def cmd_upload_excel(client: DataEaseClient, args: argparse.Namespace) -> None:
+    """上传本地 Excel（uploadFile）并生成可直接用于 save 的载荷。
+
+    流程与产品一致：multipart 上传解析 sheets → 清空内嵌数据 → 组装 create 载荷。
+    configuration 中的 sheets 会由 save 时统一 Base64，此处保持可读 JSON。
+    """
+    excel_path = Path(args.file)
+    if not excel_path.is_file():
+        raise DataEaseClientError(f"找不到文件: {excel_path}")
+
+    _remind_backup_and_admin(client, mutating=False)
+    with excel_path.open("rb") as f:
+        uploaded = client.request(
+            "POST",
+            "/datasource/uploadFile",
+            data={"id": "0", "editType": "0", "type": ""},
+            files={"file": (excel_path.name, f)},
+        )
+    if not isinstance(uploaded, dict) or not uploaded.get("sheets"):
+        raise DataEaseClientError(f"uploadFile 未返回 sheets: {uploaded}")
+
+    # 与产品行为一致：保存前清空 sheet 内嵌数据
+    clean_sheets = []
+    for sheet in uploaded.get("sheets") or []:
+        s = dict(sheet)
+        s["data"] = []
+        s["jsonArray"] = []
+        clean_sheets.append(s)
+
+    payload = {
+        "name": args.name or excel_path.stem,
+        "nodeType": "datasource",
+        "action": "create",
+        "type": "Excel",
+        "editType": 0,
+        "configuration": clean_sheets,
+    }
+    upload_summary = {
+        "uploadId": uploaded.get("id"),
+        "excelLabel": uploaded.get("excelLabel"),
+        "sheets": [
+            {
+                "excelLabel": s.get("excelLabel"),
+                "tableName": s.get("tableName"),
+                "fields": len(s.get("fields") or []),
+            }
+            for s in clean_sheets
+        ],
+    }
+
+    if args.out:
+        Path(args.out).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        upload_summary["payloadFile"] = args.out
+        upload_summary["next"] = (
+            f'datasource.py save --file "{args.out}" --pid <文件夹ID> 或 --folder-name <唯一名称>'
+        )
+        _print_json(upload_summary)
+    else:
+        _print_json({"upload": upload_summary, "payload": payload})
+
+
 def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
     ds_type = args.type
     if ds_type not in SUPPORTED_TYPES:
@@ -909,6 +972,12 @@ def build_parser() -> argparse.ArgumentParser:
     cf.add_argument("--pid", type=int, default=None, help="父文件夹 id")
     cf.add_argument("--folder-name", default=None, help="父文件夹名称（须唯一）")
     cf.set_defaults(func=cmd_create_folder)
+
+    ue = sub.add_parser("upload-excel", help="上传本地 Excel 并生成 save 载荷（Excel 数据源第一步）")
+    ue.add_argument("--file", required=True, help="本地 .xlsx 文件路径")
+    ue.add_argument("--name", default=None, help="数据源名称，默认取文件名（去扩展名）")
+    ue.add_argument("--out", default=None, help="将完整 save 载荷写入该 JSON 文件")
+    ue.set_defaults(func=cmd_upload_excel)
 
     tp = sub.add_parser("template", help="打印某类型新建模板 JSON")
     tp.add_argument("--type", required=True)
