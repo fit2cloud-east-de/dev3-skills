@@ -20,6 +20,8 @@ description: >-
 **已实现：** 数据源；数据集新建；**数据大屏 dataV**；**仪表板 dashboard**；**电子表格 spreadsheet**  
 **未实现：** 数据故事
 
+> **连接制（第一步）：** 任何任务都先确认是否有可用的 DataEase V3 连接配置（部署地址 / Access Key / Secret Key）；**没有就先向用户索取**，拿到并验证连通前不做任何业务操作。详见下方规则 0。
+
 按需阅读（勿一次全读）：
 
 | 场景 | 先读 |
@@ -38,13 +40,25 @@ description: >-
 
 ## 强制规则
 
-0. **连接制：先拿到连接配置再动手**（详见 [references/common.md](references/common.md)）。本 skill 的一切操作都依赖用户的 DataEase V3 连接信息：**首次使用必须先向用户索取「部署地址 / Access Key / Secret Key」**，保存并验证后才能继续：
-   ```bash
-   cd scripts
-   python de_setup.py save --base-url <地址> --access-key <AK> --secret-key <SK>
-   python de_setup.py check     # 验证连通性 + 自动发现五棵树组织根 + 建议写入范围
-   ```
-   用户未提供前**不得臆造、不得跳过**，应停下来说明缺什么。密钥只存本地（`~/.dataease-de3/config.json`，0600），**不得写入 skill 目录或任何仓库**，向用户回显时一律脱敏。
+0. **连接制：第一步就是向用户要连接配置**（详见 [references/common.md](references/common.md)）。本 skill 一切操作都依赖用户的 DataEase V3 连接信息，顺序固定为**先连接、后业务**：
+   - **启动动作**：接到任何任务，先确认本地是否已有可用配置 —— `cd scripts && python de_setup.py check`（或 `show` 查看）。
+   - **没有配置 → 立刻向用户索取**「部署地址 / Access Key / Secret Key」，这是这一步唯一要做的事：
+     ```text
+     开始前需要你的 DataEase V3 连接信息（三项缺一不可）：
+       1) 部署地址：如 https://de.example.com
+       2) Access Key
+       3) Secret Key
+     可在 DataEase 的「API Key 管理」中创建（Secret Key 仅创建时可见，请一并复制）。
+     ```
+   - **索取优先于一切**：在拿到这三项并验证连通之前，**不谈需求、不出方案、不做任何业务调用**——缺连接时后续动作都没有意义。
+   - **拿到后**保存并验证，再继续业务：
+     ```bash
+     cd scripts
+     python de_setup.py save --base-url <地址> --access-key <AK> --secret-key <SK>
+     python de_setup.py check     # 验证连通性 + 自动发现五棵树组织根 + 建议写入范围
+     ```
+   - **用户暂不提供**：如实说明"没有连接信息无法进行任何操作"，并再次请其提供；**不得臆造、不得跳过、不得拿示例/假地址去试探**。
+   - 密钥只存本地（默认 `~/.dataease-de3/config.json`，类 Unix 下收紧为 0600），**不得写入 skill 目录或任何仓库**，向用户回显时一律脱敏。
 1. **首次跑脚本前做 Python 环境检测**（详见 [references/common.md](references/common.md)）：查找 `python3` / `python` / Conda 环境（≥3.9）及 `requirements.txt` 依赖。缺失时可提议自动安装，但必须向用户说明将执行的命令与影响，**获得明确确认后再安装**；禁止静默安装。  
 2. **配置以对应 reference 为准**；不要传入未列出的 type / 字段 / 图表类型。  
 3. **插件数据源**：产品可能可见；本 skill 暂不支持其新建/改配置（查询仍可用）。  
@@ -76,7 +90,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 ## 工作流提纲
 
-**连接：** 向用户索取连接信息（部署地址 / Access Key / Secret Key）→ `de_setup.py save` 保存 → 检测 Python / Conda →（缺依赖则说明并确认后安装）→ `de_setup.py check` 验证连通性并获取五棵树组织根与写入范围 → `whoami`。  
+**连接（永远的第一步）：** 先查本地配置（`de_setup.py check` / `show`）；**没有就首先向用户索取「部署地址 / Access Key / Secret Key」**——在拿到并验证连通之前，不进入需求讨论与任何业务步骤 → `de_setup.py save` 保存 → 检测 Python / Conda →（缺依赖则说明并确认后安装）→ `de_setup.py check` 验证连通性并获取五棵树组织根与写入范围 → `whoami`。  
 
 **数据源：** 确认文件夹 → 查/建/校验 → 更新删除须备份+确认；**删除须先列血缘引用，且用户完整输入口令「我确认删除此数据源，并已知风险、不会影响业务」**，禁止自动删除。    
 

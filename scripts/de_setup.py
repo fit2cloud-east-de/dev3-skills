@@ -8,7 +8,7 @@
     python de_setup.py check
 
 配置优先级：命令行参数 > 环境变量（DE_BASE_URL / DE_ACCESS_KEY / DE_SECRET_KEY）> 本地配置文件
-（默认 `~/.dataease-de3/config.json`，0600 权限，可用 DE_CONFIG_FILE 指定其它路径）。
+（默认 `~/.dataease-de3/config.json`，类 Unix 下收紧为 0600，可用 DE_CONFIG_FILE 指定其它路径）。
 
 check 会验证连通性、展示当前账号，并自动发现五棵资源树的组织根 id，给出可直接粘贴的
 DE_ALLOWED_WRITE_SCOPE 建议值。
@@ -56,6 +56,7 @@ def _resolve_source(name: str, env_key: str) -> tuple[str, str]:
 def cmd_show(_client: Optional[DataEaseClient], _args: argparse.Namespace) -> None:
     """展示当前生效的连接配置（密钥脱敏）。"""
     print("== 当前连接配置（连接制）==")
+    missing = False
     for label, env_key in [
         ("部署地址", "DE_BASE_URL"),
         ("Access Key", "DE_ACCESS_KEY"),
@@ -63,11 +64,15 @@ def cmd_show(_client: Optional[DataEaseClient], _args: argparse.Namespace) -> No
     ]:
         value, source = _resolve_source(label, env_key)
         shown = value if env_key == "DE_BASE_URL" else mask_secret(value)
+        if not value:
+            missing = True
         print(f"  {label:<11}: {shown or '(未配置)'}   ← {source}")
     saved = load_saved_config()
     scope = saved.get("writeScope") or os.environ.get("DE_ALLOWED_WRITE_SCOPE") or ""
     print(f"  写入范围    : {scope or '(未限制)'}   (DE_ALLOWED_WRITE_SCOPE)")
     print(f"  配置文件    : {config_file_path()}")
+    if missing:
+        print("\n→ 连接尚未配置：请先向用户索取「部署地址 / Access Key / Secret Key」，拿到后再继续。")
 
 
 def cmd_save(_client: Optional[DataEaseClient], args: argparse.Namespace) -> None:
@@ -91,12 +96,22 @@ def cmd_save(_client: Optional[DataEaseClient], args: argparse.Namespace) -> Non
         raise DataEaseClientError("未提供任何配置项：--base-url / --access-key / --secret-key / --write-scope")
     saved_path = save_config_file(current, path)
     print(f"已保存连接配置（{', '.join(changed)}）→ {saved_path}")
-    print("提示：密钥仅写入本地文件（0600），请勿提交到任何代码仓库。下一步执行 `python de_setup.py check` 验证。")
+    print("提示：密钥仅写入本地文件（类 Unix 下收紧为 0600，Windows 下位于当前用户 home 目录），请勿提交到任何代码仓库。下一步执行 `python de_setup.py check` 验证。")
 
 
-def cmd_check(_client: Optional[DataEaseClient], _args: argparse.Namespace) -> None:
-    """验证连接可用性，并自动发现五棵树的组织根（给出写入范围建议）。"""
-    client = DataEaseClient()  # 缺配置时先给出引导性报错，不打印半张配置表
+def cmd_check(_client: Optional[DataEaseClient], _args: argparse.Namespace) -> Optional[int]:
+    """验证连接可用性，并自动发现五棵树的组织根（给出写入范围建议）。
+
+    缺配置时输出「现在就去向用户索取」的完整指引，并返回非零退出码。
+    """
+    try:
+        client = DataEaseClient()  # 缺配置时先给出引导性报错，不打印半张配置表
+    except DataEaseClientError as e:
+        print("== 连接配置：尚未就绪 ==")
+        print("本 skill 为连接制，第一步就是拿到用户的连接信息；在此之前不做任何业务操作。")
+        print()
+        print(str(e))
+        return 1
     cmd_show(None, argparse.Namespace())
     print()
     print(f"== 连通性验证：{client.base_url} ==")
@@ -163,8 +178,8 @@ def main(argv: Optional[list] = None) -> int:
     if not getattr(args, "func", None):
         args.func = cmd_check
     try:
-        args.func(None, args)
-        return 0
+        rc = args.func(None, args)
+        return rc or 0
     except DataEaseClientError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

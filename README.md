@@ -37,8 +37,10 @@
 本 skill 为**连接制**：一切操作都基于用户提供的 DataEase V3 连接信息。
 
 1. 将本目录（`dev3-skills/`）作为 Skill 安装或加入工具的 skills 路径（各产品名称可能为 Skill / Custom instruction / Agent skill）。  
-2. 向 Agent 提供 DataEase **部署地址 / Access Key / Secret Key**（或在 Agent 首次询问时提供）。  
-3. Agent 会先保存并验证连接（`scripts/de_setup.py save` → `check`），随后按 [SKILL.md](SKILL.md) 工作流调用 `scripts/` 下 CLI。
+2. Agent 的第一动作是确认连接：**本地没有配置时，会先向你索取 DataEase「部署地址 / Access Key / Secret Key」**，拿到并验证连通后才开始业务。  
+3. Agent 先保存并验证连接（`scripts/de_setup.py save` → `check`），随后按 [SKILL.md](SKILL.md) 工作流调用 `scripts/` 下 CLI。
+
+> 拿到并验证连接信息之前，Agent 不会讨论需求、也不会执行任何操作——缺少连接时其余步骤都没有意义。
 
 ```bash
 cd scripts
@@ -46,7 +48,7 @@ python de_setup.py save --base-url https://your-de-host --access-key <AK> --secr
 python de_setup.py check    # 验证连通性 + 自动发现五棵树的组织根 + 建议写入范围
 ```
 
-连接信息优先从本地配置读取：默认 `~/.dataease-de3/config.json`（0600 权限，可用 `DE_CONFIG_FILE` 指定），也支持环境变量 `DE_BASE_URL` / `DE_ACCESS_KEY` / `DE_SECRET_KEY` / `DE_ALLOWED_WRITE_SCOPE`（环境变量优先）。**密钥只存本地，请勿提交到仓库**。
+连接信息优先从本地配置读取：默认 `~/.dataease-de3/config.json`（类 Unix 下收紧为 0600；Windows 下位于当前用户 home，依赖用户目录 ACL；可用 `DE_CONFIG_FILE` 指定），也支持环境变量 `DE_BASE_URL` / `DE_ACCESS_KEY` / `DE_SECRET_KEY` / `DE_ALLOWED_WRITE_SCOPE`（环境变量优先）。**密钥只存本地，请勿提交到仓库**。
 
 适用工具示例（不限于）：WorkBuddy、Cursor、Codex、Claude Code。
 

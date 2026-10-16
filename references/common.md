@@ -39,9 +39,14 @@ python -c "import sys; assert sys.version_info >= (3, 9); import jwt, requests; 
 
 ## 连接配置（连接制）
 
-**本 skill 始终基于连接制：任何业务操作前都要先拿到用户的 DataEase V3 连接信息。**
+**本 skill 始终基于连接制：任何任务的**第一步**都是拿到用户的 DataEase V3 连接信息；在此之前不讨论需求、不出方案、不做任何业务调用。**
 
-### 首次使用：先向用户索取
+### 第一步：主动向用户索取（不要等用户主动给）
+
+接到任务先做判断：
+
+- **本地已有配置** → `python de_setup.py check` 确认连通，通过即进入业务；
+- **本地没有配置（或验证不通）** → **立刻向用户索取**，这一步除索取外不做别的事。
 
 向用户索取三项（缺一不可）：
 
@@ -50,6 +55,10 @@ python -c "import sys; assert sys.version_info >= (3, 9); import jwt, requests; 
 | 部署地址 | 用户 DataEase V3 的访问地址，如 `https://de.example.com`（脚本自动补 `/de2api`） |
 | Access Key | 用户在其 DataEase「API Key 管理」中创建的 Access Key |
 | Secret Key | 对应 Secret Key（**只在创建时可见，请提醒用户妥善保存**） |
+
+索取话术（可直接使用）：
+
+> 开始前需要你的 DataEase V3 连接信息（三项缺一不可）：① 部署地址，如 `https://de.example.com`；② Access Key；③ Secret Key。可在 DataEase 的「API Key 管理」中创建（Secret Key 仅创建时可见，请一并复制给我）。
 
 拿到后保存并验证（推荐）：
 
@@ -61,7 +70,7 @@ python de_setup.py check
 
 `check` 会：验证连通性 → 显示当前账号（admin 会给出高风险提示）→ **自动发现五棵资源树的组织根 id** → 输出可直接保存的写入范围建议。
 
-**若用户暂不提供配置，不要臆造、不要跳过——停下来向用户说明缺什么，等其提供后再继续。**
+**若用户暂不提供配置：不要臆造、不要跳过、不要拿示例或假地址去试探——如实说明「没有连接信息无法进行任何操作」，并再次请其提供，等其提供后再继续。**
 
 ### 配置来源与优先级
 
@@ -70,7 +79,7 @@ python de_setup.py check
 | 来源 | 说明 |
 |------|------|
 | 环境变量 | `DE_BASE_URL` / `DE_ACCESS_KEY` / `DE_SECRET_KEY` / `DE_ALLOWED_WRITE_SCOPE` |
-| 本地配置文件 | 默认 `~/.dataease-de3/config.json`（由 `de_setup.py save` 写入，权限 0600；可用 `DE_CONFIG_FILE` 指定其它路径），字段：`baseUrl` / `accessKey` / `secretKey` / `writeScope` |
+| 本地配置文件 | 默认 `~/.dataease-de3/config.json`（由 `de_setup.py save` 写入；**类 Unix 下收紧为 0600，Windows 下位于当前用户 home，依赖用户目录 ACL**；可用 `DE_CONFIG_FILE` 指定其它路径），字段：`baseUrl` / `accessKey` / `secretKey` / `writeScope` |
 
 `python de_setup.py show` 可查看当前生效配置（**密钥自动脱敏**）。
 

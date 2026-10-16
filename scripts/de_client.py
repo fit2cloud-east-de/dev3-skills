@@ -40,7 +40,12 @@ def load_saved_config(path: Optional[str] = None) -> dict:
 
 
 def save_config_file(values: dict, path: Optional[str] = None) -> str:
-    """写入本地连接配置文件（0600，仅当前用户可读）。"""
+    """写入本地连接配置文件。
+
+    类 Unix 系统下收紧为 0600（仅当前用户可读写）；Windows 下 `os.chmod` 不映射 POSIX
+    权限，文件放在当前用户 home 目录（%USERPROFILE%\\.dataease-de3\\config.json），
+    默认受用户目录 ACL 保护。请勿将其分享或提交到任何仓库。
+    """
     p = os.path.expanduser(path) if path else config_file_path()
     parent = os.path.dirname(p)
     if parent:
@@ -114,12 +119,26 @@ class DataEaseClient:
         )
         self.timeout = timeout
         if not self.base_url or not self.access_key or not self.secret_key:
+            missing = [
+                label
+                for label, value in (
+                    ("部署地址(baseUrl)", self.base_url),
+                    ("Access Key", self.access_key),
+                    ("Secret Key", self.secret_key),
+                )
+                if not value
+            ]
             raise DataEaseClientError(
-                "缺少连接配置。本 skill 为连接制，首次使用请先向用户索取 DataEase V3 连接信息"
-                "（部署地址 / Access Key / Secret Key），并保存：\n"
+                "缺少连接配置，无法继续（本 skill 为连接制，必须先连接再做业务）。\n"
+                f"当前缺少：{'、'.join(missing)}\n"
+                "请立即向用户索取以下三项（不要臆造、不要跳过、不要用示例/假地址试探）：\n"
+                "  1) 部署地址，如 https://de.example.com\n"
+                "  2) Access Key\n"
+                "  3) Secret Key\n"
+                "拿到后执行：\n"
                 "  python de_setup.py save --base-url <地址> --access-key <AK> --secret-key <SK>\n"
-                "随后执行 `python de_setup.py check` 验证连通性。"
-                "（也可用环境变量 DE_BASE_URL / DE_ACCESS_KEY / DE_SECRET_KEY）"
+                "  python de_setup.py check\n"
+                "（也可改用环境变量 DE_BASE_URL / DE_ACCESS_KEY / DE_SECRET_KEY）"
             )
 
     def _headers(self) -> dict:
