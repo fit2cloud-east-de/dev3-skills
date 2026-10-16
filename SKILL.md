@@ -31,6 +31,7 @@ description: >-
 | 大屏构图 / 配色 / 组件一致性 | [references/datav_visual.md](references/datav_visual.md) |
 | 仪表板流程、矩阵布局、与 dataV 差异 | [references/dashboard.md](references/dashboard.md) |
 | 电子表格新建/修改/发布、规格与条件格式 | [references/spreadsheet.md](references/spreadsheet.md) |
+| 电子表格视觉规范（配色/层级/行分隔/对齐） | [references/spreadsheet_visual.md](references/spreadsheet_visual.md) |
 | 可复制命令 | [examples/datasource.md](examples/datasource.md)、[examples/dataset.md](examples/dataset.md)、[examples/datav.md](examples/datav.md)、[examples/dashboard.md](examples/dashboard.md)、[examples/spreadsheet.md](examples/spreadsheet.md) |
 | 大屏美化示范（居中+底图提示词） | [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)（效果参考见 `assets/`；运行时生成图放用户工作区） |
 | 对外说明 | [README.md](README.md) |
@@ -54,7 +55,7 @@ description: >-
    - **仪表板**：亮色矩阵布局（`x/y/sizeX/sizeY`），勿用大屏像素坐标或暗色大屏主题。  
 10. **编辑/删除已有资源前必须血缘分析**（详见 [references/common.md](references/common.md)）：改动非本任务创建的数据集等资源前，先查下游引用（`relation.py get`；`dataset.py edit/delete` 已内置强制执行）。**有仪表板/数据大屏引用**：须向用户展示引用清单与风险（相关图表将不可用），**用户输入「确认修改」四字**后方可继续（`--confirm-modify 确认修改`），否则拒绝；**无下游引用**：仍须用户确认（`--yes`）；**当前任务新建且无外部操作**：可免提示继续（`--session-created`，仅限 Agent 能确认时）。
 11. 展示详情优先藏密码；JDBC 建议先 `validate`，需 schema 的类型先 `get-schema`。
-12. **电子表格边界**（详见 [references/spreadsheet.md](references/spreadsheet.md)）：支持新建与发布；**仅可修改当前任务内创建的电子表格**（`edit` 须 `--session-created`，否则拒绝）；**不支持修改已存在的电子表格**、不提供删除。规格（sheet / 单元格 / 公式 / 样式 / 条件格式）以 reference 为准，勿凭空编造字段。
+12. **电子表格边界**（详见 [references/spreadsheet.md](references/spreadsheet.md)）：支持新建与发布；**仅可修改当前任务内创建的电子表格**（`edit` 须 `--session-created`，否则拒绝）；**不支持修改已存在的电子表格**、不提供删除。规格（sheet / 单元格 / 公式 / 样式 / 条件格式）以 reference 为准，勿凭空编造字段。**视觉与版式必须遵循 [references/spreadsheet_visual.md](references/spreadsheet_visual.md)**：默认套用 `theme` 预设，按五段式组织（标题区/表头/数据区/合计/辅注），一套色系、统一字号阶梯与数字对齐。
 
 ## 【ADMIN 警告】（原样展示）
 
@@ -78,7 +79,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **仪表板：** 理解需求 → 在 **仪表板树** `resolve-folder` → `datasets`/`fields` → `catalog`/`layouts`（矩阵模板）→ 写 plan → `apply` → `get` → 确认后 `publish`。见 [references/dashboard.md](references/dashboard.md)、[examples/dashboard.md](examples/dashboard.md)。  
 
-**电子表格：** 在**电子表格树** `resolve-folder` → 按需求写规格（sheet / 公式 / 样式 / 条件格式）→ `create` →（迭代 `edit --session-created`）→ 用户确认后 `publish`。见 [references/spreadsheet.md](references/spreadsheet.md)、[examples/spreadsheet.md](examples/spreadsheet.md)。
+**电子表格：** 在**电子表格树** `resolve-folder` → `template --theme <名>` 取样板并按需求写规格（sheet / 公式 / 样式 / 条件格式 / 明细表 / 查询组件）→ `create` →（迭代 `edit --session-created`）→ 用户确认后 `publish`；**版式遵循 [references/spreadsheet_visual.md](references/spreadsheet_visual.md)**。见 [references/spreadsheet.md](references/spreadsheet.md)、[examples/spreadsheet.md](examples/spreadsheet.md)。
 
 ## 范围外
 

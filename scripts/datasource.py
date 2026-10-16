@@ -992,8 +992,11 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        client = DataEaseClient()
-        args.func(client, args)
+        # template 为纯本地命令，无需连接配置
+        if args.func.__name__ == "cmd_template":
+            args.func(None, args)
+        else:
+            args.func(DataEaseClient(), args)
         return 0
     except DataEaseClientError as e:
         print(f"ERROR: {e}", file=sys.stderr)

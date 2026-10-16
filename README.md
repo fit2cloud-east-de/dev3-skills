@@ -12,7 +12,7 @@
 | 数据集 | 已实现 | 取表 → 字段 → 预览 → 保存；计算 / 分组 / 复制字段；维度 / 指标；编辑 / 删除（内置血缘分析与分级确认） |
 | 数据大屏 dataV | 已实现 | 图表选型、像素排版、装饰/图片/视频、过滤与聚合、视觉构图规范、发布 |
 | 仪表板 dashboard | 已实现 | 亮色主题、矩阵布局（72×36）、模板排版、过滤与聚合、发布 |
-| 电子表格 spreadsheet | 已实现 | 新建多 Sheet 表格：单元格/公式/富文本/样式/合并/冻结/条件格式/数据验证/筛选/批注/斜线格/明细表（数据集绑定）/查询组件（时间年月日与下拉过滤）；修改本任务所建；发布 |
+| 电子表格 spreadsheet | 已实现 | 新建多 Sheet 表格（主题预设/公式/富文本/样式/冻结/条件格式/数据验证/筛选/批注/斜线格/明细表/查询组件）；修改本任务所建；发布 |
 | 数据故事 | 未实现 | — |
 | 插件数据源新建/改配置 | 未实现 | 产品中可能可见；查询仍可用 |
 
@@ -131,7 +131,7 @@ python dashboard.py catalog
 | 数据大屏 | [references/datav.md](references/datav.md) · [examples/datav.md](examples/datav.md) |
 | 大屏视觉 / 构图 | [references/datav_visual.md](references/datav_visual.md) · [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md) |
 | 仪表板 | [references/dashboard.md](references/dashboard.md) · [examples/dashboard.md](examples/dashboard.md) |
-| 电子表格 | [references/spreadsheet.md](references/spreadsheet.md) · [examples/spreadsheet.md](examples/spreadsheet.md) |
+| 电子表格 | [references/spreadsheet.md](references/spreadsheet.md) · [references/spreadsheet_visual.md](references/spreadsheet_visual.md) · [examples/spreadsheet.md](examples/spreadsheet.md) |
 | Agent 强制规则与工作流 | [SKILL.md](SKILL.md) |
 
 ## 使用约定（摘要）

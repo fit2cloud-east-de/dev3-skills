@@ -173,6 +173,181 @@ def _style_to_univer(style: dict, *, name: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 主题预设：一套色板 + 字号阶梯，产出可直接引用的命名样式
+# ---------------------------------------------------------------------------
+
+_FONT = "Microsoft YaHei"
+
+_THEME_SPECS: dict[str, dict] = {
+    "business": {
+        "label": "企业蓝（默认）",
+        "primary": "#1F4E79",
+        "soft": "#DCE9F7",
+        "accent": "#2E75B6",
+        "text": "#262626",
+        "textSecondary": "#595959",
+        "border": "#BFD4EA",
+        "grid": "#E3EAF2",
+        "zebra": "#F6FAFE",
+        "success": ("#E9F5EC", "#2E7D32"),
+        "warn": ("#FFF4E1", "#A96A00"),
+        "danger": ("#FDE8E8", "#C0392B"),
+    },
+    "finance": {
+        "label": "金融深蓝",
+        "primary": "#0F2A4A",
+        "soft": "#E3EAF3",
+        "accent": "#B8860B",
+        "text": "#1C1C1C",
+        "textSecondary": "#5A6470",
+        "border": "#C9D4E2",
+        "grid": "#E4E9EF",
+        "zebra": "#F7F9FC",
+        "success": ("#E8F2EA", "#2F6B45"),
+        "warn": ("#FBF1DC", "#8A6100"),
+        "danger": ("#F8E7E7", "#A93226"),
+    },
+    "fresh": {
+        "label": "清新绿",
+        "primary": "#2F6B4F",
+        "soft": "#E4F1EA",
+        "accent": "#3E9C6D",
+        "text": "#22312B",
+        "textSecondary": "#566660",
+        "border": "#C9DED3",
+        "grid": "#E4EFE9",
+        "zebra": "#F5FAF7",
+        "success": ("#E4F3E9", "#2C6B41"),
+        "warn": ("#FDF3DF", "#96690A"),
+        "danger": ("#FBE9E7", "#B3452F"),
+    },
+    "minimal": {
+        "label": "极简黑白",
+        "primary": "#1A1A1A",
+        "soft": "#F2F2F2",
+        "accent": "#4D4D4D",
+        "text": "#1A1A1A",
+        "textSecondary": "#595959",
+        "border": "#BFBFBF",
+        "grid": "#E6E6E6",
+        "zebra": "#FAFAFA",
+        "success": ("#EDF5EE", "#2E6B36"),
+        "warn": ("#FBF3E4", "#8A6206"),
+        "danger": ("#F7E9E9", "#A33A32"),
+    },
+}
+
+
+def theme_styles(theme: str) -> dict:
+    """主题 → 一组命名样式（spec.styles 可同名覆盖）。"""
+    key = (theme or "business").strip().lower()
+    if key not in _THEME_SPECS:
+        raise DataEaseClientError(
+            f"未知主题 theme={theme!r}，可选: {sorted(_THEME_SPECS)}"
+        )
+    t = _THEME_SPECS[key]
+    ok_bg, ok_fg = t["success"]
+    wn_bg, wn_fg = t["warn"]
+    dg_bg, dg_fg = t["danger"]
+    return {
+        # 文档标题区
+        "title": {
+            "font": _FONT, "fontSize": 20, "bold": True, "color": t["primary"],
+            "align": "center", "valign": "middle",
+        },
+        "subtitle": {
+            "font": _FONT, "fontSize": 11, "color": t["textSecondary"],
+            "align": "center", "valign": "middle",
+        },
+        "section": {
+            "font": _FONT, "fontSize": 12, "bold": True, "color": t["primary"],
+            "align": "left", "valign": "middle",
+        },
+        # 表头
+        "header": {
+            "font": _FONT, "fontSize": 11, "bold": True, "bg": t["soft"],
+            "color": t["primary"], "align": "center", "valign": "middle",
+            "border": "all", "borderColor": t["border"],
+        },
+        "headerLeft": {
+            "font": _FONT, "fontSize": 11, "bold": True, "bg": t["soft"],
+            "color": t["primary"], "align": "left", "valign": "middle",
+            "border": "all", "borderColor": t["border"],
+        },
+        # 数据区
+        "cell": {
+            "font": _FONT, "fontSize": 11, "color": t["text"],
+            "align": "center", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "cellText": {
+            "font": _FONT, "fontSize": 11, "color": t["text"],
+            "align": "left", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "qty": {
+            "font": _FONT, "fontSize": 11, "color": t["text"], "numberFormat": "#,##0",
+            "align": "center", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "money": {
+            "font": _FONT, "fontSize": 11, "color": t["text"], "numberFormat": "#,##0.00",
+            "align": "right", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "pct": {
+            "font": _FONT, "fontSize": 11, "color": t["text"], "numberFormat": "0.0%",
+            "align": "right", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "date": {
+            "font": _FONT, "fontSize": 11, "color": t["text"],
+            "align": "center", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        # 合计行（主结构线加强）
+        "total": {
+            "font": _FONT, "fontSize": 11, "bold": True, "bg": t["soft"],
+            "color": t["primary"], "align": "left", "valign": "middle",
+            "border": "all", "borderColor": t["border"],
+        },
+        "totalMoney": {
+            "font": _FONT, "fontSize": 11, "bold": True, "bg": t["soft"],
+            "color": t["primary"], "numberFormat": "#,##0.00",
+            "align": "right", "valign": "middle",
+            "border": "all", "borderColor": t["border"],
+        },
+        # 辅注与语义色
+        "note": {
+            "font": _FONT, "fontSize": 10, "italic": True, "color": t["textSecondary"],
+            "align": "left", "valign": "middle",
+        },
+        "zebra": {
+            "font": _FONT, "fontSize": 11, "color": t["text"], "bg": t["zebra"],
+            "align": "center", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "zebraText": {
+            "font": _FONT, "fontSize": 11, "color": t["text"], "bg": t["zebra"],
+            "align": "left", "valign": "middle",
+            "border": "all", "borderColor": t["grid"],
+        },
+        "success": {"font": _FONT, "fontSize": 11, "bg": ok_bg, "color": ok_fg, "align": "center"},
+        "warn": {"font": _FONT, "fontSize": 11, "bg": wn_bg, "color": wn_fg, "align": "center"},
+        "danger": {"font": _FONT, "fontSize": 11, "bg": dg_bg, "color": dg_fg, "align": "center"},
+    }
+
+
+def theme_colors(theme: str) -> dict:
+    key = (theme or "business").strip().lower()
+    if key not in _THEME_SPECS:
+        raise DataEaseClientError(
+            f"未知主题 theme={theme!r}，可选: {sorted(_THEME_SPECS)}"
+        )
+    return dict(_THEME_SPECS[key])
+
+
+# ---------------------------------------------------------------------------
 # 规格编译：spec JSON → 工作簿快照
 # ---------------------------------------------------------------------------
 
@@ -234,6 +409,15 @@ def _compile_validation(item: dict, sheet_id: str, idx: int) -> dict:
         "type": vt,
         "ranges": [_range_to_irange(str(item.get("range") or "A1"))],
     }
+    if vt in ("list", "listMultiple"):
+        # 下拉渲染方式：arrow(默认，文字+下拉箭头) / text(纯文字) / chip(彩色芯片)
+        mode = (item.get("renderMode") or "arrow").strip().lower()
+        mode_map = {"text": 0, "arrow": 1, "chip": 2}
+        if mode not in mode_map:
+            raise DataEaseClientError(
+                f"validations[{idx}] renderMode 须为 text/arrow/chip，收到: {mode!r}"
+            )
+        rule["renderMode"] = mode_map[mode]
     op = item.get("operator")
     if op:
         rule["operator"] = op
@@ -317,14 +501,19 @@ def compile_workbook(spec: dict) -> dict:
     """将简化规格编译为工作簿快照。
 
     spec 结构见 references/spreadsheet.md：
-    {styles, sheets: [{name, cells, merges, freeze, ...}], conditionalFormats,
-     validations, filters, notes, slashCells, datasetTables}
+    {theme, styles, sheets: [{name, cells, merges, freeze, ...}], conditionalFormats,
+     validations, filters, notes, slashCells, datasetTables, filterComponents}
     """
     if not isinstance(spec, dict):
         raise DataEaseClientError("规格须为 JSON 对象")
     styles_dsl = spec.get("styles") or {}
     if not isinstance(styles_dsl, dict):
         raise DataEaseClientError("styles 须为对象: {样式名: {...}}")
+    if spec.get("theme"):
+        # 主题给出整套命名样式与色板；spec.styles 同名项可覆盖
+        merged = theme_styles(spec["theme"])
+        merged.update(styles_dsl)
+        styles_dsl = merged
     styles_map = {
         f"s_{name}": _style_to_univer(s, name=name) for name, s in styles_dsl.items()
     }
@@ -834,7 +1023,9 @@ def cmd_edit(client: DataEaseClient, args: argparse.Namespace) -> None:
         "pid": vo.get("pid"),
         "nodeType": "sheet",
         "sheetData": _resolve_workbook_payload(args),
-        "version": vo.get("version"),
+        # 版本号 +1：编辑器的本地草稿按「草稿版本 == 服务端版本」恢复，
+        # 不提升版本会让用户继续看到浏览器里缓存的旧草稿。
+        "version": int(vo.get("version") or 0) + 1,
     }
     data = client.post("/spreadsheet/update", body)
     _print_json(data)
@@ -848,94 +1039,104 @@ def cmd_publish(client: DataEaseClient, args: argparse.Namespace) -> None:
 
 
 def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
-    """输出可编辑的规格模板（覆盖主要能力）。"""
+    """输出高质量规格模板（默认套用主题；可直接改内容后 create）。"""
+    theme = getattr(args, "theme", None) or "business"
+    tc = theme_colors(theme)
+    dg_bg, dg_fg = tc["danger"]
+    wn_bg, wn_fg = tc["warn"]
     tpl = {
-        "styles": {
-            "title": {
-                "bold": True, "fontSize": 14, "font": "Microsoft YaHei",
-                "align": "center", "valign": "middle", "bg": "#FFF2CC", "color": "#333333",
-                "border": "all", "borderColor": "#CCCCCC",
-            },
-            "num2": {"numberFormat": "#,##0.00"},
-            "pct": {"numberFormat": "0.0%"},
-        },
+        "theme": theme,
         "sheets": [
             {
-                "name": "Sheet1",
+                "name": "销售明细",
+                "freeze": "A3",
+                "tabColor": tc["primary"],
                 "rowCount": 200,
-                "columnCount": 12,
-                "freeze": "A2",
-                "tabColor": "#4472C4",
-                "columnWidths": {"A": 120, "B:D": 90},
-                "rowHeights": {"1": 32},
-                "merges": ["A1:D1"],
+                "columnCount": 10,
+                "columnWidths": {"A": 150, "B": 80, "C": 110, "D": 120, "E": 80, "F": 90},
+                "rowHeights": {"1": 40, "2": 22, "3": 28},
+                "merges": ["A1:F1", "A2:F2"],
                 "cells": {
-                    "A1": {"v": "销售汇总", "style": "title"},
-                    "A2": {"v": "产品"}, "B2": {"v": "销售额", "style": "num2"},
-                    "A3": {"v": "产品A"}, "B3": {"v": 1200.5, "style": "num2"},
-                    "A4": {"v": "产品B"}, "B4": {"v": 890.25, "style": "num2"},
-                    "B5": {"f": "=SUM(B3:B4)", "style": "num2"},
-                    "C3": {"v": 0.82, "style": "pct"},
-                    "D3": {"v": "0012", "type": "text"},
-                    "E1": {"richText": [
-                        {"text": "重点", "style": {"color": "#CC0000", "bold": True}},
-                        {"text": "说明", "style": {"italic": True}},
-                    ]},
+                    "A1": {"v": "月度销售分析", "style": "title"},
+                    "A2": {"v": "统计周期：2026-09-01 ~ 2026-09-30　｜　单位：元", "style": "subtitle"},
+                    "A3": {"v": "产品名称", "style": "headerLeft"},
+                    "B3": {"v": "数量", "style": "header"},
+                    "C3": {"v": "单价", "style": "header"},
+                    "D3": {"v": "金额", "style": "header"},
+                    "E3": {"v": "占比", "style": "header"},
+                    "F3": {"v": "状态", "style": "header"},
+                    "A4": {"v": "智能手表", "style": "cellText"},
+                    "B4": {"v": 12, "style": "qty"},
+                    "C4": {"v": 899, "style": "money"},
+                    "D4": {"f": "=B4*C4", "style": "money"},
+                    "E4": {"f": "=D4/$D$7", "style": "pct"},
+                    "F4": {"v": "已结算", "style": "success"},
+                    "A5": {"v": "无线耳机", "style": "zebraText"},
+                    "B5": {"v": 30, "style": "zebra"},
+                    "C5": {"v": 299.5, "style": "zebra"},
+                    "D5": {"f": "=B5*C5", "style": "zebra"},
+                    "E5": {"f": "=D5/$D$7", "style": "zebra"},
+                    "F5": {"v": "待结算", "style": "warn"},
+                    "A6": {"v": "蓝牙音箱", "style": "cellText"},
+                    "B6": {"v": 8, "style": "qty"},
+                    "C6": {"v": 459, "style": "money"},
+                    "D6": {"f": "=B6*C6", "style": "money"},
+                    "E6": {"f": "=D6/$D$7", "style": "pct"},
+                    "F6": {"v": "已结算", "style": "success"},
+                    "A7": {"v": "合计", "style": "total"},
+                    "B7": {"f": "=SUM(B4:B6)", "style": "total"},
+                    "D7": {"f": "=SUM(D4:D6)", "style": "totalMoney"},
+                    "E7": {"v": "100.0%", "style": "totalMoney"},
+                    "A9": {"v": "注：金额列为公式计算；状态列提供下拉；表头支持点选筛选。", "style": "note"},
                 },
-            },
+            }
         ],
         "conditionalFormats": [
             {
-                "sheet": "Sheet1", "range": "B3:B5",
+                "sheet": "销售明细",
+                "range": "D4:D6",
                 "rule": {
-                    "type": "highlightCell", "subType": "number",
-                    "operator": "greaterThan", "value": 1000,
-                    "style": {"bg": "#FFE0E0", "color": "#CC0000", "bold": True},
+                    "type": "highlightCell",
+                    "subType": "number",
+                    "operator": "lessThan",
+                    "value": 5000,
+                    "style": {"bg": dg_bg, "color": dg_fg, "bold": True},
+                },
+            },
+            {
+                "sheet": "销售明细",
+                "range": "B4:B6",
+                "rule": {
+                    "type": "highlightCell",
+                    "subType": "number",
+                    "operator": "lessThanOrEqual",
+                    "value": 10,
+                    "style": {"bg": wn_bg, "color": wn_fg},
                 },
             },
         ],
         "validations": [
             {
-                "sheet": "Sheet1", "range": "D3:D20", "type": "list",
-                "values": ["0012", "0013", "0014"],
-                "promptTitle": "编码", "prompt": "从下拉列表选择",
-            },
-            {
-                "sheet": "Sheet1", "range": "B3:B100", "type": "decimal",
-                "operator": "greaterThanOrEqual", "values": [0],
-                "errorTitle": "非法输入", "error": "销售额须 ≥ 0",
-            },
+                "sheet": "销售明细",
+                "range": "F4:F200",
+                "type": "list",
+                "values": ["已结算", "待结算", "已作废"],
+                "promptTitle": "状态",
+                "prompt": "从下拉列表中选择",
+            }
         ],
         "filters": [
             {
-                "sheet": "Sheet1", "range": "A2:D100",
-                "columns": [{"col": "A", "values": ["产品A"]}],
+                "sheet": "销售明细",
+                "range": "A3:F200",
+                "columns": [{"col": "F", "values": ["已结算", "待结算"]}],
             }
         ],
-        "notes": [{"sheet": "Sheet1", "cell": "A1", "text": "表头行已冻结"}],
-        "slashCells": [{"sheet": "Sheet1", "cell": "F1", "type": "two"}],
-        "datasetTables": [
+        "notes": [
             {
-                "sheet": "Sheet1", "startCell": "H2", "datasetId": "<数据集ID>",
-                "resultLimit": 100,
-                "fields": [
-                    {
-                        "id": "<字段ID>", "name": "<字段名>", "dataeaseName": "<f_xxxx>",
-                        "groupType": "d", "deType": 0,
-                    }
-                ],
-            }
-        ],
-        "filterComponents": [
-            {
-                "sheet": "Sheet1", "startCell": "A1",
-                "conditions": [
-                    {
-                        "name": "下单日期", "fieldId": "<日期字段ID>", "fieldName": "下单日期",
-                        "groupType": "d", "deType": 0,
-                        "displayType": "time", "granularity": "date",
-                    }
-                ],
+                "sheet": "销售明细",
+                "cell": "D3",
+                "text": "金额 = 数量 × 单价；合计行为 SUM 公式",
             }
         ],
     }
@@ -990,7 +1191,13 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--id", required=True)
     pb.set_defaults(func=cmd_publish)
 
-    tp = sub.add_parser("template", help="输出规格模板 JSON")
+    tp = sub.add_parser("template", help="输出高质量规格模板 JSON（默认商务主题）")
+    tp.add_argument(
+        "--theme",
+        default="business",
+        choices=sorted(_THEME_SPECS),
+        help="主题（business/finance/fresh/minimal），影响排版配色预设",
+    )
     tp.set_defaults(func=cmd_template)
 
     return p
@@ -1000,8 +1207,11 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        client = DataEaseClient()
-        args.func(client, args)
+        # template 为纯本地命令，无需连接配置
+        if args.func.__name__ == "cmd_template":
+            args.func(None, args)
+        else:
+            args.func(DataEaseClient(), args)
         return 0
     except DataEaseClientError as e:
         print(f"ERROR: {e}", file=sys.stderr)

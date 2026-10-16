@@ -9,6 +9,16 @@
 - ❌ **不支持修改已存在的电子表格**（既有表格请用户在产品界面操作）
 - ❌ 不提供删除命令
 
+## 交互能力与查看态（重要）
+
+以下能力**只在编辑态可用**，在预览态（模板/表格的预览浮层）下表格为只读，点击不会有任何效果——这是产品设计，不是配置错误：
+
+- 数据验证下拉的**选择与写入**（能看到并点开选项，但预览态下选完不写入）
+- 自动筛选的**表头筛选按钮**（应用/取消筛选）
+- 查询组件的**条件选择与查询**
+
+因此：**验证这些交互功能时必须在编辑页打开**（电子表格树中进入编辑），不要用预览浮层；向用户交付时也应说明"交互请在产品编辑态使用"。生成内容本身与查看态无关——快照里配置正确，编辑态即生效。
+
 ## 流程与视图语义
 
 1. `spreadsheet.py resolve-folder --name "目标文件夹"`（电子表格树，勿用其它树组织根 id）
@@ -19,6 +29,8 @@
 
 **两个视图**：`get`（findById）返回**发布版**——未发布的新改动不在其中；`get-edit`（findEditById）返回**编辑稿**（含全部改动）。校验最近一次编辑结果请用 `get-edit`；发布后两者一致（status: 0 未发布 / 1 已发布 / 2 已保存未发布）。
 
+**本地草稿与版本号（重要）**：编辑器打开表格时，若浏览器本地存在草稿且**草稿版本 == 服务端编辑稿版本**，会用**本地草稿覆盖服务端内容**。因此通过接口修改后，若版本号不变，用户刷新仍可能看到旧草稿。`edit` 会自动把 `version` 加一，使旧草稿失效；人工直接调 `update` 时也须提升 `version`，否则改动可能"看不到"。
+
 ---
 
 ## 规格 JSON（spec）
@@ -27,7 +39,8 @@
 
 | 键 | 类型 | 说明 |
 |----|------|------|
-| `styles` | `{名: 样式}` | 命名样式表；单元格 `"style": "名"` 引用 |
+| `theme` | 字符串 | **主题预设（推荐）**：`business` / `finance` / `fresh` / `minimal`，给出整套合规命名样式与色板，见 [spreadsheet_visual.md](spreadsheet_visual.md) |
+| `styles` | `{名: 样式}` | 自定义命名样式；与主题同名则覆盖主题项 |
 | `sheets` | `数组` | 工作表列表，至少 1 个；顺序即展示顺序 |
 | `conditionalFormats` | `数组` | 条件格式 |
 | `validations` | `数组` | 数据验证（下拉列表 / 数值范围 / 自定义公式等） |
@@ -36,6 +49,8 @@
 | `slashCells` | `数组` | 斜线格（二分/三分） |
 | `datasetTables` | `数组` | 明细表：把数据集字段绑定到某起始格渲染 |
 | `filterComponents` | `数组` | 查询组件：按时间（年/月/日）或文本下拉过滤明细表，至多一条（工作簿级单例） |
+
+**视觉与版式**：标题区 / 表头 / 数据区 / 合计行 / 辅注的五段式结构、色彩角色、字号阶梯、行分隔与对齐规则见 [spreadsheet_visual.md](spreadsheet_visual.md)。用 `theme` 即可满足大部分规范；`spreadsheet.py template --theme <名>` 直接产出合规样板。
 
 ### sheets[] 工作表
 
@@ -105,7 +120,7 @@
 
 | type | 字段 | 说明 |
 |------|------|------|
-| `list` / `listMultiple` | `values: [选项]` | 下拉菜单（单选 / 多选）。选项用 `values` 数组传入（CLI 生成合规存储格式）；如引用单元格区域，改用 `formula: "=$F$2:$F$5"` |
+| `list` / `listMultiple` | `values: [选项]` | 下拉菜单（单选 / 多选）。选项用 `values` 数组传入（CLI 生成合规存储格式）；如引用单元格区域，改用 `formula: "=$F$2:$F$5"`。可选 `renderMode`：`arrow`（默认，单元格显示文字 + 下拉箭头）/ `text`（仅文字）/ `chip`（彩色芯片） |
 | `decimal` / `whole` | `operator` + `values` | 小数 / 整数范围；operator 同条件格式数值比较 |
 | `textLength` | `operator` + `values` | 文本长度限制 |
 | `date` / `time` | `operator` + `values` | 日期 / 时间范围 |
@@ -115,13 +130,15 @@
 
 可选：`allowBlank`（默认 true）、`promptTitle`/`prompt`（输入提示）、`errorTitle`/`error`（错误提示）。
 
+> **下拉务必保持默认 `arrow`**：产品对下拉有「芯片/箭头/文本」三种渲染方式，缺省会落到**芯片**样式——单元格会被涂成灰底芯片并跳过常规文字渲染，导致值看不清、看着像空壳。`arrow` 模式显示文字 + 下拉箭头，可读可点。
+
 > 产品对应位置：工具栏「数据」→「规则」→「数据验证」，新建规则后条件类型选「下拉菜单」，选项来源可选「自定义」（逐个录入）或「引用数据」（引用某区域）。
 
 ## filters 自动筛选
 
-每表一条：`{"sheet", "range": "A1:E100", "columns": [...]}`（range 首行为表头行）
+每表一条：`{"sheet", "range": "A1:E100"}`（range 首行为表头行）。**推荐只给范围**：表头出现筛选按钮，由使用者在界面上勾选条件。
 
-每列：`{"col": "C", "values": ["是", "否"]}` 按值筛选；或 `{"col": "B", "custom": [{"val": 100, "operator": "greaterThan"}]}` 自定义条件（operator：equal / notEqual / greaterThan / greaterThanOrEqual / lessThan / lessThanOrEqual）。
+如需预置条件，加 `columns`：`{"col": "C", "values": ["是", "否"]}` 按值筛选；或 `{"col": "B", "custom": [{"val": 100, "operator": "greaterThan"}]}` 自定义条件（operator：equal / notEqual / greaterThan / greaterThanOrEqual / lessThan / lessThanOrEqual）。
 
 ## notes 批注 / slashCells 斜线格
 

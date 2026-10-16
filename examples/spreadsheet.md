@@ -7,54 +7,58 @@ python spreadsheet.py resolve-folder --name "目标文件夹"
 # 同名则列出候选，确认后再用 --pid
 ```
 
-## 生成规格模板（覆盖全部特性，推荐起点）
+## 生成高质量样板（推荐起点，自动套用主题）
 
 ```bash
-python spreadsheet.py template > spec.json
+python spreadsheet.py template --theme business > spec.json   # 可选 finance / fresh / minimal
 ```
 
-## 新建（多 sheet + 公式 + 样式 + 富文本 + 冻结 + 条件格式 + 验证 + 筛选 + 批注 + 斜线格）
+样板已含五段式版式（标题区/表头/数据区/合计/辅注）、公式、斑马纹、下拉、筛选、批注与条件格式，改内容即可用。
+
+## 新建（主题 + 多 sheet + 公式 + 条件格式 + 验证 + 筛选 + 批注）
 
 ```json
 {
-  "styles": {
-    "title": {"bold": true, "fontSize": 14, "align": "center", "valign": "middle", "bg": "#FFF2CC", "border": "all"},
-    "num2": {"numberFormat": "#,##0.00"}
-  },
+  "theme": "business",
   "sheets": [
     {
-      "name": "销售明细", "freeze": "A2", "tabColor": "#4472C4",
-      "columnWidths": {"A": 120, "B:E": 100}, "merges": ["A1:E1"],
+      "name": "销售明细", "freeze": "A3", "tabColor": "#1F4E79",
+      "columnWidths": {"A": 150, "B": 80, "C": 110, "D": 120},
+      "merges": ["A1:D1"],
       "cells": {
-        "A1": {"richText": [
-          {"text": "重点", "style": {"color": "#CC0000", "bold": true}},
-          {"text": "：2026年Q3 销售汇总"}
-        ]},
-        "A3": {"v": "智能手表"}, "B3": {"v": 128000.5, "style": "num2"},
-        "A5": {"v": "合计"}, "B5": {"f": "=SUM(B3:B4)", "style": "num2"},
-        "E3": {"v": "00120", "type": "text"}
+        "A1": {"v": "2026年Q3 销售汇总", "style": "title"},
+        "A2": {"v": "统计周期：2026-07-01 ~ 2026-09-30　｜　单位：元", "style": "subtitle"},
+        "A3": {"v": "产品名称", "style": "headerLeft"},
+        "B3": {"v": "数量", "style": "header"},
+        "C3": {"v": "单价", "style": "header"},
+        "D3": {"v": "金额", "style": "header"},
+        "A4": {"v": "智能手表", "style": "cellText"},
+        "B4": {"v": 12, "style": "qty"},
+        "C4": {"v": 899, "style": "money"},
+        "D4": {"f": "=B4*C4", "style": "money"},
+        "A5": {"v": "无线耳机", "style": "zebraText"},
+        "B5": {"v": 30, "style": "zebra"},
+        "D5": {"f": "=B5*C5", "style": "zebra"},
+        "A6": {"v": "合计", "style": "total"},
+        "D6": {"f": "=SUM(D4:D5)", "style": "totalMoney"}
       }
-    },
-    {"name": "说明", "hidden": true, "cells": {"A1": {"v": "内部附注页"}}}
+    }
   ],
   "conditionalFormats": [
-    {"sheet": "销售明细", "range": "B3:B5",
+    {"sheet": "销售明细", "range": "D4:D5",
      "rule": {"type": "highlightCell", "subType": "number", "operator": "greaterThan",
-              "value": 90000, "style": {"bg": "#FFE0E0", "color": "#CC0000", "bold": true}}}
+              "value": 10000, "style": {"bg": "#FDE8E8", "color": "#C0392B", "bold": true}}}
   ],
   "validations": [
-    {"sheet": "销售明细", "range": "D3:D50", "type": "list", "values": ["已审核", "待审核"],
-     "promptTitle": "状态", "prompt": "从下拉选择"},
-    {"sheet": "销售明细", "range": "B3:B100", "type": "decimal", "operator": "greaterThanOrEqual",
-     "values": [0], "errorTitle": "非法输入", "error": "销售额须 ≥ 0"}
+    {"sheet": "销售明细", "range": "E4:E100", "type": "list", "values": ["已结算", "待结算"],
+     "promptTitle": "状态", "prompt": "从下拉选择"}
   ],
   "filters": [
-    {"sheet": "销售明细", "range": "A2:E100", "columns": [{"col": "D", "values": ["已审核"]}]}
+    {"sheet": "销售明细", "range": "A3:E100", "columns": [{"col": "E", "values": ["已结算"]}]}
   ],
-  "notes": [{"sheet": "销售明细", "cell": "A1", "text": "表头行已冻结"}],
-  "slashCells": [{"sheet": "销售明细", "cell": "F1", "type": "two"}],
+  "notes": [{"sheet": "销售明细", "cell": "D3", "text": "金额 = 数量 × 单价"}],
   "datasetTables": [
-    {"sheet": "销售明细", "startCell": "A7", "datasetId": "<数据集ID>", "resultLimit": 100,
+    {"sheet": "销售明细", "startCell": "A9", "datasetId": "<数据集ID>", "resultLimit": 100,
      "blockName": "明细数据", "fields": [{"id": "<字段ID>", "name": "<字段名>",
        "dataeaseName": "<f_xxxx>", "groupType": "d", "deType": 0, "extField": 0}]}
   ],
