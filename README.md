@@ -1,6 +1,8 @@
 # DataEase V3 Skills（dev3-skills）
 
-面向 **AI Agent** 的 DataEase 3.x 能力包：通过 **Python3 + API Key** 管理数据源、新建数据集、制作数据大屏（dataV）与仪表板（dashboard）。
+**一个懂你数据，懂 UI 美化的 DataEase V3 Skills**
+
+面向 **AI Agent** 的 DataEase 3.x 能力包：通过 **Python3 + API Key** 管理数据源、新建数据集、制作数据大屏（dataV）与仪表板（dashboard），并生成带主题与视觉规范的电子表格。
 
 可在 **WorkBuddy、Cursor、Codex、Claude Code** 等支持 Agent Skills / 自定义技能的工具中加载本目录后使用。Agent 入口为 [SKILL.md](SKILL.md)；字段与流程见 `references/`，命令示例见 `examples/`。
 
