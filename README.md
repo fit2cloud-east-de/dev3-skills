@@ -20,11 +20,11 @@
 
 ## 数据大屏效果参考
 
-按视觉构图规范生成的居中美化大屏示例（季度销售情况看板）：
+按视觉构图规范生成的大屏示例（智慧仓储监控中心：顶部指标卡 → 中部占比/柱图 → 底部趋势/分布/汇总表）：
 
-![季度销售情况看板效果参考](assets/datav_quarterly_sales_ref.png)
+![智慧仓储监控中心效果参考](assets/datav_warehouse_monitor_ref.png)
 
-提示词与 plan 见 [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)；构图规则见 [references/datav_visual.md](references/datav_visual.md)。
+构图规则见 [references/datav_visual.md](references/datav_visual.md)；居中主舞台版式的构图思路与提示词见 [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md)。
 
 ## 仪表板效果参考
 
