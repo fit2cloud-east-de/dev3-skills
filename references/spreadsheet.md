@@ -105,7 +105,7 @@
 
 | type | 字段 | 说明 |
 |------|------|------|
-| `list` / `listMultiple` | `values: [选项]` | 下拉列表（单选/多选）；选项值勿含英文逗号，或直接传 `formula` 引用单元格区域 |
+| `list` / `listMultiple` | `values: [选项]` | 下拉菜单（单选 / 多选）。选项用 `values` 数组传入（CLI 生成合规存储格式）；如引用单元格区域，改用 `formula: "=$F$2:$F$5"` |
 | `decimal` / `whole` | `operator` + `values` | 小数 / 整数范围；operator 同条件格式数值比较 |
 | `textLength` | `operator` + `values` | 文本长度限制 |
 | `date` / `time` | `operator` + `values` | 日期 / 时间范围 |
@@ -114,6 +114,8 @@
 | `any` | — | 任意值（仅带提示） |
 
 可选：`allowBlank`（默认 true）、`promptTitle`/`prompt`（输入提示）、`errorTitle`/`error`（错误提示）。
+
+> 产品对应位置：工具栏「数据」→「规则」→「数据验证」，新建规则后条件类型选「下拉菜单」，选项来源可选「自定义」（逐个录入）或「引用数据」（引用某区域）。
 
 ## filters 自动筛选
 

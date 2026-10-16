@@ -241,7 +241,8 @@ def _compile_validation(item: dict, sheet_id: str, idx: int) -> dict:
     if formula1 is None and item.get("values") is not None:
         vals = item["values"]
         if vt in ("list", "listMultiple"):
-            formula1 = '"' + ",".join(str(v) for v in vals) + '"'
+            # 下拉选项以 JSON 数组字符串写入（与产品面板一致，勿用带引号逗号串）
+            formula1 = json.dumps([str(v) for v in vals], ensure_ascii=False)
         elif isinstance(vals, (list, tuple)):
             if len(vals) >= 2:
                 formula1, formula2 = str(vals[0]), str(vals[1])
