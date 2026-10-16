@@ -34,9 +34,19 @@
 
 ## 在 Agent 中使用
 
+本 skill 为**连接制**：一切操作都基于用户提供的 DataEase V3 连接信息。
+
 1. 将本目录（`dev3-skills/`）作为 Skill 安装或加入工具的 skills 路径（各产品名称可能为 Skill / Custom instruction / Agent skill）。  
-2. 向 Agent 说明 DataEase 地址与 API Key（或已配置的环境变量），提出业务需求（如「新建 Excel 数据源并做大屏」）。  
-3. Agent 应先完成 **Python 环境检测**（见下），再按 [SKILL.md](SKILL.md) 工作流调用 `scripts/` 下 CLI。
+2. 向 Agent 提供 DataEase **部署地址 / Access Key / Secret Key**（或在 Agent 首次询问时提供）。  
+3. Agent 会先保存并验证连接（`scripts/de_setup.py save` → `check`），随后按 [SKILL.md](SKILL.md) 工作流调用 `scripts/` 下 CLI。
+
+```bash
+cd scripts
+python de_setup.py save --base-url https://your-de-host --access-key <AK> --secret-key <SK>
+python de_setup.py check    # 验证连通性 + 自动发现五棵树的组织根 + 建议写入范围
+```
+
+连接信息优先从本地配置读取：默认 `~/.dataease-de3/config.json`（0600 权限，可用 `DE_CONFIG_FILE` 指定），也支持环境变量 `DE_BASE_URL` / `DE_ACCESS_KEY` / `DE_SECRET_KEY` / `DE_ALLOWED_WRITE_SCOPE`（环境变量优先）。**密钥只存本地，请勿提交到仓库**。
 
 适用工具示例（不限于）：WorkBuddy、Cursor、Codex、Claude Code。
 
@@ -51,6 +61,7 @@ dev3-skills/
   examples/             # 可复制 CLI 示例
   scripts/              # Python CLI
     requirements.txt
+    de_setup.py         # 连接配置（连接制）：save / check / show
     de_client.py
     datasource.py
     dataset.py
@@ -89,15 +100,25 @@ Agent **首次执行本 skill 的脚本前**应自动检测本地环境，**不�
 
 ## 配置与自检
 
+**推荐方式（连接制，密钥只落本地）**：
+
 ```bash
 cd scripts
 # 仅在用户确认后安装：pip install -r requirements.txt
+python de_setup.py save --base-url https://your-de-host --access-key <AK> --secret-key <SK>
+python de_setup.py check
+```
 
+`check` 会验证连通性、显示账号，并自动列出五棵树的组织根 id 与建议写入范围（可直接 `save --write-scope ...` 保存）。
+
+也可用环境变量（优先于本地配置）：
+
+```bash
 export DE_BASE_URL=https://your-de-host
 export DE_ACCESS_KEY=your_access_key
 export DE_SECRET_KEY=your_secret_key
-# 推荐：允许写入的组织根/文件夹（逗号分隔；数据源/数据集/大屏/仪表板/电子表格五棵树 id 通常不同）
-export DE_ALLOWED_WRITE_SCOPE=<id1>,<id2>,<id3>,<id4>
+# 推荐：允许写入的组织根/文件夹（逗号分隔；五棵树 id 通常不同）
+export DE_ALLOWED_WRITE_SCOPE=<id1>,<id2>,<id3>,<id4>,<id5>
 ```
 
 Windows PowerShell：
@@ -113,6 +134,7 @@ $env:DE_ALLOWED_WRITE_SCOPE="..."
 自检：
 
 ```bash
+python de_setup.py show     # 当前生效配置（密钥脱敏）
 python datasource.py whoami
 python datasource.py types
 python datav.py catalog

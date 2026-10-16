@@ -24,7 +24,7 @@ description: >-
 
 | 场景 | 先读 |
 |------|------|
-| 环境 / Python 检测 / 认证 / 文件夹 / 风险话术 | [references/common.md](references/common.md) |
+| **连接配置（连接制）/ 环境 / Python 检测 / 认证 / 文件夹 / 风险话术** | [references/common.md](references/common.md) |
 | 数据源类型与字段、API | [references/datasource.md](references/datasource.md) |
 | 数据集流程、字段操作、编辑/删除与血缘 | [references/dataset.md](references/dataset.md) |
 | 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
@@ -38,6 +38,13 @@ description: >-
 
 ## 强制规则
 
+0. **连接制：先拿到连接配置再动手**（详见 [references/common.md](references/common.md)）。本 skill 的一切操作都依赖用户的 DataEase V3 连接信息：**首次使用必须先向用户索取「部署地址 / Access Key / Secret Key」**，保存并验证后才能继续：
+   ```bash
+   cd scripts
+   python de_setup.py save --base-url <地址> --access-key <AK> --secret-key <SK>
+   python de_setup.py check     # 验证连通性 + 自动发现五棵树组织根 + 建议写入范围
+   ```
+   用户未提供前**不得臆造、不得跳过**，应停下来说明缺什么。密钥只存本地（`~/.dataease-de3/config.json`，0600），**不得写入 skill 目录或任何仓库**，向用户回显时一律脱敏。
 1. **首次跑脚本前做 Python 环境检测**（详见 [references/common.md](references/common.md)）：查找 `python3` / `python` / Conda 环境（≥3.9）及 `requirements.txt` 依赖。缺失时可提议自动安装，但必须向用户说明将执行的命令与影响，**获得明确确认后再安装**；禁止静默安装。  
 2. **配置以对应 reference 为准**；不要传入未列出的 type / 字段 / 图表类型。  
 3. **插件数据源**：产品可能可见；本 skill 暂不支持其新建/改配置（查询仍可用）。  
@@ -69,7 +76,7 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 ## 工作流提纲
 
-**环境：** 检测 Python / Conda →（缺依赖则说明并确认后安装）→ 确认 `DE_*` 环境变量 → `whoami`。  
+**连接：** 向用户索取连接信息（部署地址 / Access Key / Secret Key）→ `de_setup.py save` 保存 → 检测 Python / Conda →（缺依赖则说明并确认后安装）→ `de_setup.py check` 验证连通性并获取五棵树组织根与写入范围 → `whoami`。  
 
 **数据源：** 确认文件夹 → 查/建/校验 → 更新删除须备份+确认；**删除须先列血缘引用，且用户完整输入口令「我确认删除此数据源，并已知风险、不会影响业务」**，禁止自动删除。    
 

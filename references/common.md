@@ -37,18 +37,54 @@ python -c "import sys; assert sys.version_info >= (3, 9); import jwt, requests; 
 
 用户拒绝时：只提供手工指引，不继续跑业务脚本。
 
-## 环境变量
+## 连接配置（连接制）
 
-| 变量 | 说明 |
-|------|------|
-| `DE_BASE_URL` | 如 `https://your-de-host`（脚本自动加 `/de2api`） |
-| `DE_ACCESS_KEY` / `DE_SECRET_KEY` | API Key |
-| `DE_ALLOWED_WRITE_SCOPE` | 推荐；逗号分隔的允许写入组织根/文件夹 ID |
+**本 skill 始终基于连接制：任何业务操作前都要先拿到用户的 DataEase V3 连接信息。**
+
+### 首次使用：先向用户索取
+
+向用户索取三项（缺一不可）：
+
+| 项 | 说明 |
+|----|------|
+| 部署地址 | 用户 DataEase V3 的访问地址，如 `https://de.example.com`（脚本自动补 `/de2api`） |
+| Access Key | 用户在其 DataEase「API Key 管理」中创建的 Access Key |
+| Secret Key | 对应 Secret Key（**只在创建时可见，请提醒用户妥善保存**） |
+
+拿到后保存并验证（推荐）：
 
 ```bash
 cd scripts
-# 仅在用户确认后：python -m pip install -r requirements.txt
+python de_setup.py save --base-url https://de.example.com --access-key <AK> --secret-key <SK>
+python de_setup.py check
 ```
+
+`check` 会：验证连通性 → 显示当前账号（admin 会给出高风险提示）→ **自动发现五棵资源树的组织根 id** → 输出可直接保存的写入范围建议。
+
+**若用户暂不提供配置，不要臆造、不要跳过——停下来向用户说明缺什么，等其提供后再继续。**
+
+### 配置来源与优先级
+
+`命令行参数` > `环境变量` > `本地配置文件`
+
+| 来源 | 说明 |
+|------|------|
+| 环境变量 | `DE_BASE_URL` / `DE_ACCESS_KEY` / `DE_SECRET_KEY` / `DE_ALLOWED_WRITE_SCOPE` |
+| 本地配置文件 | 默认 `~/.dataease-de3/config.json`（由 `de_setup.py save` 写入，权限 0600；可用 `DE_CONFIG_FILE` 指定其它路径），字段：`baseUrl` / `accessKey` / `secretKey` / `writeScope` |
+
+`python de_setup.py show` 可查看当前生效配置（**密钥自动脱敏**）。
+
+### 写入范围与组织根
+
+- 推荐配置写入范围：既可在本地配置里保存 `writeScope`，也可用环境变量 `DE_ALLOWED_WRITE_SCOPE`（两者都支持；环境变量优先）。
+- **五棵树的组织根 id 通常不同**，`de_setup.py check` 会自动列出，直接照抄其建议值即可，避免手抄错 id。
+- 即使 Key 能访问其它组织，也不得在用户允许范围之外增删改。
+
+### 安全约定
+
+- 密钥只写入本地配置文件，**严禁提交进任何代码仓库、不要写进 skill 目录**。
+- 展示配置一律脱敏（`de_setup.py show` / `datasource.py whoami`）。
+- 与用户确认连接信息属于必要收集，但**不要把它回显到聊天记录里**（除域名外，AK/SK 请只回显脱敏值）。
 
 ## 认证
 

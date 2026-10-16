@@ -146,6 +146,11 @@ def cmd_whoami(client: DataEaseClient, _args: argparse.Namespace) -> None:
 def _allowed_write_scope() -> Optional[Set[str]]:
     raw = os.environ.get("DE_ALLOWED_WRITE_SCOPE", "").strip()
     if not raw:
+        # 连接制：也支持 de_setup.py save --write-scope 写入的本地配置
+        from de_client import load_saved_config
+
+        raw = str(load_saved_config().get("writeScope") or "").strip()
+    if not raw:
         return None
     return {x.strip() for x in raw.split(",") if x.strip()}
 

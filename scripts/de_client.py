@@ -19,6 +19,51 @@ class DataEaseClientError(RuntimeError):
     pass
 
 
+# 连接配置（连接制）：优先级 构造参数 > 环境变量 > 本地配置文件
+DEFAULT_CONFIG_FILE = "~/.dataease-de3/config.json"
+
+
+def config_file_path() -> str:
+    """本地连接配置文件路径（可用 DE_CONFIG_FILE 覆盖）。"""
+    return os.path.expanduser(os.environ.get("DE_CONFIG_FILE") or DEFAULT_CONFIG_FILE)
+
+
+def load_saved_config(path: Optional[str] = None) -> dict:
+    """读取本地连接配置文件；不存在或损坏时返回空字典。"""
+    p = os.path.expanduser(path) if path else config_file_path()
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config_file(values: dict, path: Optional[str] = None) -> str:
+    """写入本地连接配置文件（0600，仅当前用户可读）。"""
+    p = os.path.expanduser(path) if path else config_file_path()
+    parent = os.path.dirname(p)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(values, fh, ensure_ascii=False, indent=2)
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
+    return p
+
+
+def mask_secret(value: Optional[str], keep: int = 4) -> str:
+    """脱敏展示密钥。"""
+    if not value:
+        return "(未配置)"
+    v = str(value)
+    if len(v) <= keep:
+        return "*" * len(v)
+    return f"{'*' * (len(v) - keep)}{v[-keep:]}"
+
+
 def _aes_encrypt(src: str, secret_key: str, iv: str) -> str:
     cipher = AES.new(secret_key.encode("utf-8"), AES.MODE_CBC, iv.encode("utf-8"))
     encrypted = cipher.encrypt(pad(src.encode("utf-8"), AES.block_size))
@@ -56,14 +101,25 @@ class DataEaseClient:
         secret_key: Optional[str] = None,
         timeout: int = 60,
     ):
-        self.base_url = (base_url or os.environ.get("DE_BASE_URL", "")).rstrip("/")
-        self.access_key = access_key or os.environ.get("DE_ACCESS_KEY", "")
-        self.secret_key = secret_key or os.environ.get("DE_SECRET_KEY", "")
+        # 连接制：构造参数 > 环境变量 > 本地配置文件（~/.dataease-de3/config.json）
+        saved = load_saved_config()
+        self.base_url = (
+            base_url or os.environ.get("DE_BASE_URL") or saved.get("baseUrl") or ""
+        ).rstrip("/")
+        self.access_key = (
+            access_key or os.environ.get("DE_ACCESS_KEY") or saved.get("accessKey") or ""
+        )
+        self.secret_key = (
+            secret_key or os.environ.get("DE_SECRET_KEY") or saved.get("secretKey") or ""
+        )
         self.timeout = timeout
         if not self.base_url or not self.access_key or not self.secret_key:
             raise DataEaseClientError(
-                "缺少连接配置。请设置环境变量 DE_BASE_URL / DE_ACCESS_KEY / DE_SECRET_KEY，"
-                "或在构造参数中传入。"
+                "缺少连接配置。本 skill 为连接制，首次使用请先向用户索取 DataEase V3 连接信息"
+                "（部署地址 / Access Key / Secret Key），并保存：\n"
+                "  python de_setup.py save --base-url <地址> --access-key <AK> --secret-key <SK>\n"
+                "随后执行 `python de_setup.py check` 验证连通性。"
+                "（也可用环境变量 DE_BASE_URL / DE_ACCESS_KEY / DE_SECRET_KEY）"
             )
 
     def _headers(self) -> dict:
