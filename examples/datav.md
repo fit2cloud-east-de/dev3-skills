@@ -83,6 +83,105 @@ python datav.py apply --id <DV_ID> --file plan_charts.json --append
 - `python datav.py catalog` 可查看 `Picture` / `DeVideo` 说明  
 
 
+## 图表样式与全局配置
+
+```bash
+# 先查键名与默认值（离线，不需要连接）
+python datav.py defaults --key label.show
+python datav.py defaults --group chart
+```
+
+```json
+{
+  "name": "销售运营大屏",
+  "folderName": "销售分析",
+  "datasetId": "<DATASET_ID>",
+  "canvas": {
+    "backgroundColor": "#020408",
+    "refreshBrowserEnable": true,
+    "refreshBrowserTime": 10,
+    "dashboard.gapSize": 8,
+    "component.chartTitle.color": "#ffffff",
+    "component.chartTitle.fontSize": 16,
+    "component.chartCommonStyle.backgroundImageEnable": true,
+    "component.chartCommonStyle.backgroundType": "outerImage",
+    "component.chartCommonStyle.outerImage": "https://example.com/frame.png"
+  },
+  "charts": [
+    {
+      "type": "bar",
+      "title": "各省销量",
+      "xAxis": ["省份"],
+      "yAxis": [{ "name": "销售量", "summary": "sum" }],
+      "config": {
+        "label.show": true,
+        "label.color": "#8ab4f8",
+        "legend.show": false,
+        "basicStyle.gradient": true
+      }
+    }
+  ]
+}
+```
+
+```bash
+python datav.py lint-plan --file plan.json   # 先自检
+python datav.py apply --file plan.json
+```
+
+## 联动与跳转
+
+```json
+{
+  "linkage": [
+    { "source": "各省销量", "targets": ["销量占比"], "fields": [{ "source": "省份", "target": "省份" }] }
+  ],
+  "jump": [
+    {
+      "source": "各省销量",
+      "field": "省份",
+      "linkType": "outer",
+      "jumpType": "_blank",
+      "content": "https://bi.example.com/detail?prov=[省份]"
+    }
+  ]
+}
+```
+
+随 plan 一起 `apply` 即可；也可在图表保存后单独维护：
+
+```bash
+python datav.py jump fields --id <DV_ID> --source "各省销量"
+python datav.py linkage set  --id <DV_ID> --source "各省销量" --target "销量占比" --field 省份=省份
+python datav.py jump set     --id <DV_ID> --source "各省销量" --field 省份 \
+       --link-type outer --jump-type _blank --content "https://bi.example.com/detail?prov=[省份]"
+python datav.py linkage list --id <DV_ID>
+python datav.py jump list    --id <DV_ID>
+```
+
+内部跳转（跳到另一个大屏并带参数）——用文件描述更清楚：
+
+```json
+[
+  {
+    "source": "各省销量",
+    "field": "省份",
+    "linkType": "inner",
+    "jumpType": "newPop",
+    "windowSize": "large",
+    "targetDvId": "<目标大屏ID>",
+    "targets": [
+      { "view": "明细表", "fields": [{ "source": "省份", "target": "省份" }] },
+      { "view": "省份筛选", "type": "filter", "fields": [{ "source": "省份", "target": "过滤组件参数" }] }
+    ]
+  }
+]
+```
+
+```bash
+python datav.py jump set --id <DV_ID> --file jump-inner.json
+```
+
 ## 数据集规则提醒
 
 - 未获用户确认，不要绑定「别人已经建好」的数据集。  

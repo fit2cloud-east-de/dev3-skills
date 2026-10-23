@@ -5,12 +5,14 @@ description: >-
   Claude Code and similar agents. Manages datasource connections, dataset
   creation (tables, fields, preview, calc/group/copy, dimension vs metric), and
   dataV big-screen and dashboard creation (chart catalog, layout, decorations
-  including Picture/DeVideo, matrix layouts for dashboards, filters, aggregation).
+  including Picture/DeVideo, matrix layouts for dashboards, filters, aggregation,
+  global canvas defaults, per-chart styling, chart linkage and chart jump).
   Auto-detects local Python3/conda and may install deps only after user confirmation.
   Use when the user mentions DataEase 数据源/数据集/数据大屏/仪表板/电子表格, datasource,
   dataset, dataV, dashboard, spreadsheet, 新建数据源, 新建数据集, 计算字段, 维度指标, 大屏,
-  可视化大屏, 看板, 图表排版, 血缘分析, 关联分析, 编辑数据集, 删除数据集, 在线表格,
-  单元格公式, 条件格式. Data storytelling is not implemented yet.
+  可视化大屏, 看板, 图表排版, 图表联动, 联动, 图表跳转, 跳转, 主题配色, 血缘分析,
+  关联分析, 编辑数据集, 删除数据集, 在线表格, 单元格公式, 条件格式.
+  Data storytelling is not implemented yet.
 ---
 
 # DataEase V3 Skills
@@ -29,9 +31,10 @@ description: >-
 | **连接配置（连接制）/ 环境 / Python 检测 / 认证 / 文件夹 / 风险话术** | [references/common.md](references/common.md) |
 | 数据源类型与字段、API | [references/datasource.md](references/datasource.md) |
 | 数据集流程、字段操作、编辑/删除与血缘 | [references/dataset.md](references/dataset.md) |
-| 数据大屏流程、轴/聚合/过滤、数据集复用规则 | [references/datav.md](references/datav.md) |
+| 数据大屏流程、轴/聚合/过滤、全局默认配置、图表配置、**联动与跳转** | [references/datav.md](references/datav.md) |
 | 大屏构图 / 配色 / 组件一致性 | [references/datav_visual.md](references/datav_visual.md) |
 | 仪表板流程、矩阵布局、与 dataV 差异 | [references/dashboard.md](references/dashboard.md) |
+| **大屏/仪表板 全局配置 + 图表配置 + 联动/跳转 默认值全表** | [references/panel_defaults.md](references/panel_defaults.md)，或 `datav.py defaults` / `dashboard.py defaults` |
 | 电子表格新建/修改/发布、规格与条件格式 | [references/spreadsheet.md](references/spreadsheet.md) |
 | **电子表格界面可达性（哪些界面上有 / 没有）** | [references/spreadsheet_parity.md](references/spreadsheet_parity.md) |
 | **电子表格各项默认值全表（105 项）** | [references/spreadsheet_defaults.md](references/spreadsheet_defaults.md)，或 `spreadsheet.py defaults` |
@@ -74,6 +77,10 @@ description: >-
    - **未获用户明确确认，禁止复用非本次创建的已有数据集**；  
    - 若提议修改已有集：必须说明「其它看板/大屏可能引用、数据会跟着变」的风险，自查冲突，冲突则自建新集；  
    - 图表轴、聚合 `summary`、`customFilter`、布局必须与 `catalog`/字段清单一致；**预览取数失败不得保存**；  
+   - **全局默认配置**写在 plan 的 `canvas`（`canvasStyleData`），支持 `component.chartTitle.show` 这类点号路径；**图表样式**写在 `charts[].config`，键名必须在 `defaults --group chart` 清单内（写错会报错，不会静默丢弃）；  
+   - **`apply` / `create-empty` 前先 `lint-plan`**：图种不在清单、缺 `datasetId`、轴放错、`config` 键名错、联动缺 `targets`、跳转缺字段/`content` 会被判 `error` 并**阻止写入**；坐标越界、标题重名只是 `warn`；确需绕过加 `--allow-lint-errors`（不推荐）；  
+   - **联动 / 跳转**用 plan 的 `linkage` / `jump`（`apply` 在图表落库后自动写入），或用 `linkage` / `jump` 子命令单独维护。两者"配了不生效"的最常见原因是**总开关没开**（`linkageActive` / `jumpActive`）——写入时默认开启，但要向用户说明这层依赖；跳转触发字段必须在该图表已用字段内（先 `jump fields` 核对）；  
+   - **任何配置项默认值不确定时，先 `defaults --key <键名>` 查询**，不要凭印象填（全量表见 [references/panel_defaults.md](references/panel_defaults.md)）；  
    - **大屏视觉**：构图层级、淡彩/渐变、外框色系统一，见 [references/datav_visual.md](references/datav_visual.md)；  
    - **仪表板**：亮色矩阵布局（`x/y/sizeX/sizeY`），勿用大屏像素坐标或暗色大屏主题。  
 10. **编辑/删除已有资源前必须血缘分析**（详见 [references/common.md](references/common.md)）：改动非本任务创建的数据集等资源前，先查下游引用（`relation.py get`；`dataset.py edit/delete` 已内置强制执行）。**有仪表板/数据大屏引用**：须向用户展示引用清单与风险（相关图表将不可用），**用户输入「确认修改」四字**后方可继续（`--confirm-modify 确认修改`），否则拒绝；**无下游引用**：仍须用户确认（`--yes`）；**当前任务新建且无外部操作**：可免提示继续（`--session-created`，仅限 Agent 能确认时）。
@@ -98,9 +105,9 @@ admin 权限过大，误操作可能影响全站数据与配置。
 
 **数据集：** 确认数据源与文件夹 → `tables` → `fields`/`classify` →（可选 ops）→ `preview` → `create`；**编辑/删除已有集：先血缘分析（内置），按分级确认（确认修改 / --yes / --session-created）执行**。  
 
-**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版 → 按 [datav_visual.md](references/datav_visual.md) 定主视觉/色板/外框 → 写 plan → `preview-chart` 或 `apply` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
+**数据大屏：** 理解需求 → `datasets`/`fields`（遵守复用规则）→ `catalog`/`layouts` 选图与排版 → 按 [datav_visual.md](references/datav_visual.md) 定主视觉/色板/外框 → 写 plan（`canvas` 全局配置 + `charts[].config` 图表样式）→ `lint-plan` 自检 → `apply`（含取数预览）→ 需要时补 `linkage`/`jump` → `get` → 确认后 `publish`。见 [references/datav.md](references/datav.md)、[examples/datav.md](examples/datav.md)。
 
-**仪表板：** 理解需求 → 在 **仪表板树** `resolve-folder` → `datasets`/`fields` → `catalog`/`layouts`（矩阵模板）→ 写 plan → `apply` → `get` → 确认后 `publish`。见 [references/dashboard.md](references/dashboard.md)、[examples/dashboard.md](examples/dashboard.md)。  
+**仪表板：** 理解需求 → 在 **仪表板树** `resolve-folder` → `datasets`/`fields` → `catalog`/`layouts`（矩阵模板）→ 写 plan（`canvas` + `charts[].config`）→ `lint-plan` → `apply` → 需要时补 `linkage`/`jump` → `get` → 确认后 `publish`。见 [references/dashboard.md](references/dashboard.md)、[examples/dashboard.md](examples/dashboard.md)。  
 
 **电子表格：** 在**电子表格树** `resolve-folder` → `template --theme <名>` 取样板并按需求写规格（sheet / 公式 / 样式 / 条件格式 / 明细表 / 查询组件）→ `lint` 预览风险（`create`/`edit` 内置同一守卫，有 error 会拒绝写入）→ `create` →（迭代 `edit --session-created`）→ 用户确认后 `publish`；**版式遵循 [references/spreadsheet_visual.md](references/spreadsheet_visual.md)**，**界面可达性遵循 [references/spreadsheet_parity.md](references/spreadsheet_parity.md)**。见 [references/spreadsheet.md](references/spreadsheet.md)、[examples/spreadsheet.md](examples/spreadsheet.md)。
 

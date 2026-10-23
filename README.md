@@ -12,8 +12,8 @@
 |------|------|------|
 | 数据源 | 已实现 | 查询 / 新建 / 校验 / 更新 / 删除（内置类型） |
 | 数据集 | 已实现 | 取表 → 字段 → 预览 → 保存；计算 / 分组 / 复制字段；维度 / 指标；编辑 / 删除（内置血缘分析与分级确认） |
-| 数据大屏 dataV | 已实现 | 图表选型、像素排版、装饰/图片/视频、过滤与聚合、视觉构图规范、发布 |
-| 仪表板 dashboard | 已实现 | 亮色主题、矩阵布局（72×36）、模板排版、过滤与聚合、发布 |
+| 数据大屏 dataV | 已实现 | 图表选型、像素排版、装饰/图片/视频、过滤与聚合、视觉构图规范、发布；`canvas` 全局默认配置、`charts[].config` 图表样式、**图表联动 / 图表跳转**；`defaults` 查默认值、`lint-plan` 保存前自检 |
+| 仪表板 dashboard | 已实现 | 亮色主题、矩阵布局（72×36）、模板排版、过滤与聚合、发布；同一套全局配置 / 图表样式 / 联动 / 跳转能力，默认值走亮色分支 |
 | 电子表格 spreadsheet | 已实现 | 新建多 Sheet 表格（主题预设/公式/富文本/样式/冻结/条件格式/数据验证/筛选/批注/斜线格/明细表/查询组件）；生成前 `lint` 自检（界面可达性 / 结构风险）；`defaults` 查 105 项默认值与界面位置；修改本任务所建；发布 |
 | 数据故事 | 未实现 | — |
 | 插件数据源新建/改配置 | 未实现 | 产品中可能可见；查询仍可用 |
@@ -33,6 +33,16 @@
 ![经营概览仪表板效果参考](assets/dashboard_overview_ref.png)
 
 流程与 plan 见 [examples/dashboard.md](examples/dashboard.md)；说明见 [references/dashboard.md](references/dashboard.md)。
+
+## 配置与交互（大屏 / 仪表板）
+
+看板类资源分三层配置，都能用 plan 直接表达：
+
+- **面板级全局**：`plan.canvas` → `canvasStyleData`（尺寸与适配、定时刷新、底色底图、栅格间隙、结果集条数、统一组件标题/背景/配色/查询组件风格），支持 `component.chartTitle.show` 这类点号路径
+- **图表级**：`charts[].config` → `canvasViewInfo[组件id]` 的 `customAttr` / `customStyle` / `senior`（配色、标签、提示框、指标卡、表格、标题、图例、坐标轴、空值/阈值/滚动）
+- **交互级**：`plan.linkage` / `plan.jump` → 图表联动与跳转（外部链接、面板内跳转、弹窗、附加过滤参数）
+
+默认值不靠记忆：`python datav.py defaults --key customStyle.legend.vPosition` 单项查询，全量 170+ 项见 [references/panel_defaults.md](references/panel_defaults.md)。写入前 `lint-plan` 自检，`apply` 内置同一守卫，结构性错误会直接阻断。
 
 ## 在 Agent 中使用
 
@@ -157,6 +167,7 @@ python dashboard.py catalog
 | 数据大屏 | [references/datav.md](references/datav.md) · [examples/datav.md](examples/datav.md) |
 | 大屏视觉 / 构图 | [references/datav_visual.md](references/datav_visual.md) · [examples/datav_showcase_center_beautify.md](examples/datav_showcase_center_beautify.md) |
 | 仪表板 | [references/dashboard.md](references/dashboard.md) · [examples/dashboard.md](examples/dashboard.md) |
+| 全局配置 / 图表配置 / 联动 / 跳转 默认值 | [references/panel_defaults.md](references/panel_defaults.md) |
 | 电子表格 | [references/spreadsheet.md](references/spreadsheet.md) · [references/spreadsheet_visual.md](references/spreadsheet_visual.md) · [examples/spreadsheet.md](examples/spreadsheet.md) |
 | Agent 强制规则与工作流 | [SKILL.md](SKILL.md) |
 

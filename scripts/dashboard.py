@@ -29,8 +29,19 @@ from dashboard_defaults import (
     user_view_component,
 )
 from dashboard_layouts import all_layouts, apply_template_to_plan, get_layout
-from datav import build_chart_view, cmd_datasets, cmd_fields, cmd_preview_chart
+from datav import (
+    apply_chart_overrides,
+    build_chart_view,
+    cmd_datasets,
+    cmd_defaults as cmd_defaults_shared,
+    cmd_fields,
+    cmd_preview_chart,
+    lint_plan,
+)
 from datav_defaults import base_view_config
+import panel_link
+import panel_schema
+from panel_schema import set_path
 from datasource import (
     _assert_within_write_scope,
     _remind_backup_and_admin,
@@ -382,6 +393,7 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
             view["title"] = title
             view["tableId"] = ""
             apply_light_view_theme(view)
+            apply_chart_overrides(view, ch.get("config"))
             views[cid] = view
             components[-1]["render"] = "custom"
         else:
@@ -400,6 +412,7 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
                 extra_view=ch.get("extraView") or ch.get("view"),
             )
             apply_light_view_theme(view)
+            apply_chart_overrides(view, ch.get("config"))
             if not ch.get("skipPreview"):
                 try:
                     client.post("/chartData/getData", view)
@@ -422,6 +435,19 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
         plan = apply_template_to_plan(plan)
     except ValueError as e:
         raise DataEaseClientError(str(e)) from e
+
+    issues = lint_plan(plan)
+    errors = [x for x in issues if x["level"] == "error"]
+    for x in issues:
+        if x["level"] == "warn":
+            print(f"WARN[{x['code']}] {x['message']}", file=sys.stderr)
+    if errors and not getattr(args, "allow_lint_errors", False):
+        detail = "\n".join(f"  - [{x['code']}] {x['message']}" for x in errors)
+        raise DataEaseClientError(
+            "规格未通过自检，已阻止写入（不会产生半成品仪表板）：\n"
+            f"{detail}\n"
+            "修正后重试；确认要强行写入请加 --allow-lint-errors"
+        )
 
     dv_id = args.id or plan.get("id")
     current: Optional[dict] = None
@@ -482,7 +508,11 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
     components, views, canvas_over = build_from_plan(client, plan, scene_id=scene_id)
     if canvas_over:
         for k, v in canvas_over.items():
-            style[k] = v
+            # 支持 canvas 里写 "component.chartTitle.show" 这类嵌套全局配置
+            if "." in str(k):
+                set_path(style, str(k), v)
+            else:
+                style[k] = v
     style["dvType"] = "dashboard"
     if "dashboard" in style and isinstance(style["dashboard"], dict):
         style["dashboard"].setdefault("themeColor", "light")
@@ -517,6 +547,30 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
         "nodeType": "panel",
     }
     result = client.post("/dataVisualization/updateCanvas", payload)
+
+    # 联动 / 跳转走独立接口，必须在图表视图落库之后再写
+    linkage_items = plan.get("linkage") or plan.get("linkages") or []
+    jump_items = plan.get("jump") or plan.get("jumps") or []
+    linkage_report: list = []
+    jump_report: list = []
+    tips: list[str] = []
+    if linkage_items or jump_items:
+        live_views = panel_link.get_panel_views(client, str(scene_id), busi_flag="dashboard")
+        if linkage_items:
+            linkage_report = panel_link.apply_linkage(
+                client, str(scene_id), live_views, linkage_items, replace=True
+            )
+            for t in panel_link.self_check({"linkage": linkage_report}):
+                panel_link.warn(t)
+                tips.append(t)
+        if jump_items:
+            jump_report = panel_link.apply_jump(
+                client, str(scene_id), live_views, jump_items, replace=True
+            )
+            for t in panel_link.self_check({"jump": jump_report}):
+                panel_link.warn(t)
+                tips.append(t)
+
     _print_json(
         {
             "id": str(scene_id),
@@ -526,9 +580,40 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
             "layout": (plan.get("_resolvedLayout") or {}).get("id"),
             "charts": len(plan.get("charts") or []),
             "decorations": len(plan.get("decorations") or []),
+            "linkage": linkage_report,
+            "jump": jump_report,
+            "tips": tips,
             "result": result,
         }
     )
+
+
+def cmd_defaults(_client: Optional[DataEaseClient], args: argparse.Namespace) -> None:
+    """本面板的默认值查询（与数据大屏共用注册表，仅默认值列不同）。"""
+    return cmd_defaults_shared(_client, args)
+
+
+def cmd_lint_plan(_client: Optional[DataEaseClient], args: argparse.Namespace) -> None:
+    """离线自检仪表板 plan（用仪表板自己的矩阵布局模板）。"""
+    plan = _load_json(args.json, args.file)
+    if not isinstance(plan, dict):
+        raise DataEaseClientError("lint-plan 需要 --file/--json 计划对象")
+    try:
+        plan = apply_template_to_plan(plan)
+    except ValueError as e:
+        raise DataEaseClientError(str(e)) from e
+    issues = lint_plan(plan)
+    errors = [x for x in issues if x["level"] == "error"]
+    _print_json(
+        {
+            "ok": not errors,
+            "errorCount": len(errors),
+            "warnCount": len([x for x in issues if x["level"] == "warn"]),
+            "issues": issues,
+        }
+    )
+    if errors:
+        raise DataEaseClientError(f"自检发现 {len(errors)} 处错误，见 issues")
 
 
 def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
@@ -547,8 +632,29 @@ def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
                         "xAxis": ["省份"],
                         "yAxis": [{"name": "销售量", "summary": "sum"}],
                         "layout": {"x": 1, "y": 5, "sizeX": 36, "sizeY": 16},
+                        "config": {"label.show": True, "legend.show": False},
                     }
                 ],
+                "_configDemo": {
+                    "说明": "charts[].config 用友好键，键名必须在 defaults --group chart 清单内",
+                    "样例": {"text.color": "#1f2329", "legend.vPosition": "top"},
+                },
+                "_linkageDemo": {
+                    "说明": "源图表点击后联动其他图表；fields 省略则按同名自动配对",
+                    "样例": [{"source": "示例图", "targets": ["占比"]}],
+                },
+                "_jumpDemo": {
+                    "说明": "linkType=outer 走外部链接；inner 走面板跳转（需 targetDvId + targets）",
+                    "样例": [
+                        {
+                            "source": "示例图",
+                            "field": "省份",
+                            "linkType": "outer",
+                            "jumpType": "_blank",
+                            "content": "https://example.com/detail?prov=[省份]",
+                        }
+                    ],
+                },
             }
         )
         return
@@ -673,7 +779,29 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--file")
     ap.add_argument("--json")
     ap.add_argument("--append", action="store_true")
+    ap.add_argument("--allow-lint-errors", action="store_true", help="自检有 error 仍强行写入（不推荐）")
     ap.set_defaults(func=cmd_apply)
+
+    df = sub.add_parser("defaults", help="查默认值（离线）：全局配置 / 图表配置 / 联动 / 跳转")
+    df.add_argument(
+        "--group",
+        default="canvas",
+        choices=["canvas", "chart", "linkage", "jump"],
+        help="canvas=面板级全局 / chart=单图表 / linkage=联动 / jump=跳转",
+    )
+    df.add_argument("--key", default=None, help="只查一项，如 customAttr.label.show")
+    df.add_argument("--all", action="store_true", help="输出全部分组")
+    df.add_argument("--markdown", action="store_true", help="输出 markdown 表格")
+    df.add_argument("--output", default=None, help="配合 --markdown 写到文件")
+    df.set_defaults(func=cmd_defaults)
+
+    lp = sub.add_parser("lint-plan", help="离线自检 plan（不连接、不写入）")
+    lp.add_argument("--file")
+    lp.add_argument("--json")
+    lp.set_defaults(func=cmd_lint_plan)
+
+    panel_link.add_linkage_parser(sub, busi_flag="dashboard", label="仪表板")
+    panel_link.add_jump_parser(sub, busi_flag="dashboard", label="仪表板")
 
     pe = sub.add_parser("plan-example", help="打印 plan JSON 示例")
     pe.add_argument("--layout", default="grid_2x2", help="grid_2x2|grid_3x2|kpi_charts|free")
@@ -686,7 +814,7 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        offline = {"plan-example", "catalog", "layouts"}
+        offline = {"plan-example", "catalog", "layouts", "defaults", "lint-plan"}
         if args.command in offline:
             args.func(None, args)  # type: ignore[arg-type]
             return 0

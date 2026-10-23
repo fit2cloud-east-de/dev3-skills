@@ -18,6 +18,8 @@ from typing import Any, Optional
 
 from de_client import DataEaseClient, DataEaseClientError
 from de_ids import snowflake_id
+import panel_link
+import panel_schema
 from datav_defaults import (
     CHART_TYPES,
     DECORATION_KINDS,
@@ -37,6 +39,7 @@ from datasource import (
     _remind_backup_and_admin,
     _resolve_folder,
 )
+from panel_schema import set_path
 
 
 def _print_json(data: Any) -> None:
@@ -84,6 +87,9 @@ def cmd_catalog(client: DataEaseClient, _args: argparse.Namespace) -> None:
                 "布局模板：grid_3x4（平均分布 3×4）、center_v2（居中结构-形式二）；plan 设 layout 后自动填槽位",
                 "UserView 的 id 必须与 canvasViewInfo 的 key 一致",
                 "聚合 summary 配在指标字段上，不是图表顶层",
+                "图表样式用 charts[].config + 友好键（label.show / legend.show / xAxis.color），先 defaults --group chart 查清单",
+                "联动写 plan.linkage，跳转写 plan.jump；也可用 linkage/jump 子命令单独维护（图表需先保存）",
+                "全局默认配置（刷新/适配/栅格/统一组件风格）写在 plan.canvas，支持 component.chartTitle.show 这类点号路径",
                 "图片 Picture：decorations 写 kind=Picture + url（写入 propValue.url）；可选 adaptation",
                 "视频 DeVideo：decorations 写 kind=DeVideo + url（写入 videoLinks.web.src）；勿把地址塞进 propValue",
                 "美化示范：canvas.background + 组件 commonBackground.outerImage；配色用 charts[].extraView；见 examples/datav_showcase_center_beautify.md",
@@ -266,6 +272,268 @@ def _pick_fields(
             )
         out.append(_as_view_field(src, summary=summary if src.get("groupType") == "q" else None))
     return out
+
+
+# 图表样式容器的归属：友好键首段 → 实际存放位置
+# xAxis/yAxis 在顶层是「字段数组」，样式则放在 customStyle 下，故此处按样式处理
+_CHART_ATTR_ROOTS = {
+    "basicStyle": "customAttr",
+    "label": "customAttr",
+    "tooltip": "customAttr",
+    "indicator": "customAttr",
+    "indicatorName": "customAttr",
+    "tableHeader": "customAttr",
+    "tableCell": "customAttr",
+    "tableTotal": "customAttr",
+    "misc": "customAttr",
+    "map": "customAttr",
+    "text": "customStyle",
+    "legend": "customStyle",
+    "xAxis": "customStyle",
+    "yAxis": "customStyle",
+    "yAxisExt": "customStyle",
+    "senior": "senior",
+}
+_DIRECT_ROOTS = ("customAttr", "customStyle", "senior")
+_CHART_TOP_KEYS = {
+    "title",
+    "resultCount",
+    "resultMode",
+    "refreshViewEnable",
+    "refreshTime",
+    "refreshUnit",
+    "linkageActive",
+    "jumpActive",
+    "customFilter",
+    "xAxisExt",
+    "extStack",
+    "drillFields",
+}
+
+
+def resolve_chart_path(key: str) -> str:
+    """把配置项名解析成视图里的真实路径；无法识别则报错并给近似项。"""
+    k = str(key or "").strip()
+    if not k:
+        raise DataEaseClientError("图表配置项名不能为空")
+    if k in _CHART_TOP_KEYS:
+        return k
+    head = k.split(".")[0]
+    if head in _DIRECT_ROOTS:
+        return k
+    if "." in k:
+        root = _CHART_ATTR_ROOTS.get(head)
+        if root:
+            full = f"{root}.{k}"
+            # 简写形式必须命中注册表，防止 label.shw 这类笔误被静默写进视图
+            if panel_schema.lookup(full):
+                return full
+            sug = panel_schema.suggest(full)
+            hint = f"你是否想配：{', '.join(sug)}" if sug else "运行 defaults --group chart 查看全部可配项"
+            raise DataEaseClientError(f"不认识的图表配置项「{k}」。{hint}")
+    if panel_schema.lookup(k):
+        # 注册表里有，但不在图表视图上（例如面板级配置）
+        raise DataEaseClientError(f"「{k}」是面板级配置，请写在 plan 的 canvas 里，不要写进 charts[].config")
+    sug = panel_schema.suggest(k)
+    hint = f"你是否想配：{', '.join(sug)}" if sug else "运行 defaults --group chart 查看全部可配项"
+    raise DataEaseClientError(f"不认识的图表配置项「{k}」。{hint}")
+
+
+def apply_chart_overrides(view: dict, overrides: Any) -> dict:
+    """按友好键写入图表配置，键名必须在注册表内，避免臆造字段。"""
+    if not overrides:
+        return view
+    if not isinstance(overrides, dict):
+        raise DataEaseClientError("charts[].config 必须是对象，如 {\"label.show\": true}")
+    for key, value in overrides.items():
+        set_path(view, resolve_chart_path(key), value)
+    return view
+
+
+def lint_plan(plan: dict) -> list[dict]:
+    """离线自检：只查结构性错误，不需要连接、不读数据集。"""
+    issues: list[dict] = []
+
+    def add(level: str, code: str, msg: str, where: str = "") -> None:
+        issues.append({"level": level, "code": code, "message": msg, "where": where})
+
+    if not isinstance(plan, dict):
+        add("error", "plan_not_object", "plan 必须是 JSON 对象")
+        return issues
+
+    canvas = plan.get("canvas") or {}
+    try:
+        cw = int(canvas.get("width") or 1920)
+        chh = int(canvas.get("height") or 1080)
+    except (TypeError, ValueError):
+        cw, chh = 1920, 1080
+        add("warn", "canvas_size_invalid", "canvas 的 width/height 不是整数，按 1920×1080 处理")
+
+    if not plan.get("id"):
+        if not (plan.get("pid") or plan.get("folderName") or plan.get("folder_name")):
+            add("error", "no_target", "新建大屏须给 pid 或 folderName；更新已有大屏须给 id")
+
+    titles: dict[str, int] = {}
+    charts = plan.get("charts") or []
+    if not isinstance(charts, list):
+        add("error", "charts_not_list", "charts 必须是数组")
+        charts = []
+
+    for i, c in enumerate(charts):
+        where = f"charts[{i}]"
+        if not isinstance(c, dict):
+            add("error", "chart_not_object", f"{where} 必须是对象", where)
+            continue
+        ctype = c.get("type")
+        if not ctype:
+            add("error", "chart_no_type", f"{where} 缺少 type（图种）", where)
+            continue
+        if ctype not in CHART_TYPES:
+            add("error", "chart_type_unknown", f"{where} 图种「{ctype}」不在清单内，catalog 可查", where)
+        dataset_id = c.get("datasetId") or c.get("tableId") or plan.get("datasetId")
+        if not dataset_id and ctype != "rich-text":
+            add("error", "chart_no_dataset", f"{where} 在 plan 与自身都没给 datasetId", where)
+
+        xa = c.get("xAxis") or []
+        ya = c.get("yAxis") or []
+        if ctype == "indicator":
+            if xa:
+                add("error", "indicator_has_xaxis", f"{where} 指标卡只吃 yAxis，xAxis 必须为空", where)
+            if len(ya) != 1:
+                add("error", "indicator_yaxis_count", f"{where} 指标卡 yAxis 必须正好 1 个数值指标", where)
+        if ctype in ("pie", "pie-donut", "pie-rose", "pie-donut-rose", "treemap", "gauge", "liquid"):
+            if len(ya) > 1:
+                add("error", "single_quota_only", f"{where} 图种「{ctype}」只支持 1 个指标", where)
+        if ctype == "table-info":
+            if ya:
+                add("error", "table_info_has_yaxis", f"{where} 明细表列放 xAxis，yAxis 必须为空", where)
+            if not xa:
+                add("error", "table_info_no_columns", f"{where} 明细表至少要给 1 个 xAxis 列", where)
+        if ctype in ("bar-stack", "bar-stack-horizontal", "area-stack") and not (
+            c.get("extStack") or c.get("xAxisExt")
+        ):
+            add("warn", "stack_without_stack_field", f"{where} 堆叠图未给 extStack，会退化成普通图", where)
+
+        cfg = c.get("config")
+        if cfg is not None:
+            if not isinstance(cfg, dict):
+                add("error", "chart_config_not_object", f"{where} config 必须是对象", where)
+            else:
+                for k in cfg:
+                    try:
+                        resolve_chart_path(k)
+                    except DataEaseClientError as e:
+                        add("error", "chart_config_unknown", str(e), where)
+
+        for misplaced in ("jump", "jumps", "linkage", "linkages"):
+            if c.get(misplaced):
+                add(
+                    "warn",
+                    "interaction_misplaced",
+                    f"{where} 下的 {misplaced} 不会被读取：联动/跳转写在 plan 顶层，"
+                    f"用 source 指定源图表，如 plan.{'jump' if misplaced.startswith('jump') else 'linkage'}[]",
+                    where,
+                )
+                break
+
+        lay = c.get("layout") or {}
+        if isinstance(lay, dict) and lay:
+            if {"x", "y", "sizeX", "sizeY"} & set(lay):
+                # 仪表板矩阵坐标：72×36，1-based
+                try:
+                    mx = int(lay.get("x", 1))
+                    my = int(lay.get("y", 1))
+                    msx = int(lay.get("sizeX", 1))
+                    msy = int(lay.get("sizeY", 1))
+                except (TypeError, ValueError):
+                    add("warn", "chart_layout_invalid", f"{where} layout 矩阵值必须是整数", where)
+                else:
+                    if msx <= 0 or msy <= 0:
+                        add("warn", "chart_layout_empty", f"{where} layout sizeX/sizeY 必须为正", where)
+                    if mx < 1 or my < 1:
+                        add("warn", "chart_layout_negative", f"{where} 矩阵坐标从 1 开始", where)
+                    if mx + msx - 1 > 72 or my + msy - 1 > 36:
+                        add(
+                            "warn",
+                            "chart_layout_out_of_bounds",
+                            f"{where} 超出 72×36 矩阵：x+sizeX-1={mx + msx - 1}, y+sizeY-1={my + msy - 1}",
+                            where,
+                        )
+            elif {"left", "top", "width", "height"} & set(lay):
+                # 大屏像素坐标
+                try:
+                    left = int(lay.get("left", 0))
+                    top = int(lay.get("top", 0))
+                    w = int(lay.get("width", 0))
+                    h = int(lay.get("height", 0))
+                except (TypeError, ValueError):
+                    add("warn", "chart_layout_invalid", f"{where} layout 像素必须是整数", where)
+                else:
+                    if w <= 0 or h <= 0:
+                        add("warn", "chart_layout_empty", f"{where} layout 宽高必须为正", where)
+                    if left < 0 or top < 0:
+                        add("warn", "chart_layout_negative", f"{where} layout 坐标不能为负", where)
+                    if left + w > cw or top + h > chh:
+                        add(
+                            "warn",
+                            "chart_layout_out_of_bounds",
+                            f"{where} 超出画布（{cw}×{chh}）：left+width={left + w}, top+height={top + h}",
+                            where,
+                        )
+        title = c.get("title") or c.get("name")
+        if title:
+            titles[str(title)] = titles.get(str(title), 0) + 1
+
+    for t, n in titles.items():
+        if n > 1:
+            add(
+                "warn",
+                "duplicate_chart_title",
+                f"图表标题「{t}」出现 {n} 次；联动/跳转按标题定位会失败，请改成唯一标题或改用组件 id",
+            )
+
+    deco = plan.get("decorations") or []
+    for i, d in enumerate(deco):
+        if not isinstance(d, dict):
+            add("error", "decoration_not_object", f"decorations[{i}] 必须是对象")
+            continue
+        if not (d.get("kind") or d.get("component")):
+            add("error", "decoration_no_kind", f"decorations[{i}] 缺少 kind")
+
+    for i, item in enumerate(plan.get("linkage") or []):
+        where = f"linkage[{i}]"
+        if not isinstance(item, dict):
+            add("error", "linkage_not_object", f"{where} 必须是对象", where)
+            continue
+        if not (item.get("source") or item.get("sourceView")):
+            add("error", "linkage_no_source", f"{where} 缺少 source", where)
+        if not (item.get("targets") or item.get("targetViews") or item.get("target")):
+            add("error", "linkage_no_target", f"{where} 缺少 targets", where)
+
+    for i, item in enumerate(plan.get("jump") or []):
+        where = f"jump[{i}]"
+        if not isinstance(item, dict):
+            add("error", "jump_not_object", f"{where} 必须是对象", where)
+            continue
+        if not (item.get("source") or item.get("sourceView")):
+            add("error", "jump_no_source", f"{where} 缺少 source", where)
+        if not (item.get("field") or item.get("fields")):
+            add("error", "jump_no_field", f"{where} 缺少 field（触发字段）", where)
+        link_type = item.get("linkType") or "outer"
+        if link_type not in panel_link.LINK_TYPES:
+            add("error", "jump_bad_link_type", f"{where} linkType 只能是 {panel_link.LINK_TYPES}", where)
+        if link_type == "inner":
+            if not item.get("targetDvId"):
+                add("error", "jump_inner_no_target", f"{where} 内部跳转必须给 targetDvId", where)
+            if not item.get("targets"):
+                add("error", "jump_inner_no_targets", f"{where} 内部跳转必须给 targets", where)
+        else:
+            if not item.get("content"):
+                add("error", "jump_outer_no_content", f"{where} 外部链接必须给 content", where)
+            elif len(str(item["content"])) > panel_link.CONTENT_MAX:
+                add("error", "jump_content_too_long", f"{where} content 超过 {panel_link.CONTENT_MAX} 字符", where)
+
+    return issues
 
 
 def build_chart_view(
@@ -674,6 +942,7 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
             view["render"] = "custom"
             view["title"] = title
             view["tableId"] = ""
+            apply_chart_overrides(view, ch.get("config"))
             views[cid] = view
             # 组件 render 与界面 getViewConfig 一致
             components[-1]["render"] = "custom"
@@ -692,6 +961,7 @@ def build_from_plan(client: DataEaseClient, plan: dict, *, scene_id: str) -> tup
                 custom_filter=ch.get("customFilter"),
                 extra_view=ch.get("extraView") or ch.get("view"),
             )
+            apply_chart_overrides(view, ch.get("config"))
             if not ch.get("skipPreview"):
                 try:
                     client.post("/chartData/getData", view)
@@ -713,6 +983,19 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
         plan = apply_template_to_plan(plan)
     except ValueError as e:
         raise DataEaseClientError(str(e)) from e
+
+    issues = lint_plan(plan)
+    errors = [x for x in issues if x["level"] == "error"]
+    warns = [x for x in issues if x["level"] == "warn"]
+    for x in warns:
+        print(f"WARN[{x['code']}] {x['message']}", file=sys.stderr)
+    if errors and not getattr(args, "allow_lint_errors", False):
+        detail = "\n".join(f"  - [{x['code']}] {x['message']}" for x in errors)
+        raise DataEaseClientError(
+            "规格未通过自检，已阻止写入（不会产生半成品大屏）：\n"
+            f"{detail}\n"
+            "修正后重试；确认要强行写入请加 --allow-lint-errors"
+        )
 
     dv_id = args.id or plan.get("id")
     current: Optional[dict] = None
@@ -773,7 +1056,11 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
     components, views, canvas_over = build_from_plan(client, plan, scene_id=scene_id)
     if canvas_over:
         for k, v in canvas_over.items():
-            style[k] = v
+            # 支持 canvas 里写 "component.chartTitle.show" 这类嵌套全局配置
+            if "." in str(k):
+                set_path(style, str(k), v)
+            else:
+                style[k] = v
 
     if args.append and current is not None:
         try:
@@ -805,6 +1092,30 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
         "nodeType": "panel",
     }
     result = client.post("/dataVisualization/updateCanvas", payload)
+
+    # 联动 / 跳转是独立接口，必须在图表视图落库之后再写，否则找不到目标图表
+    linkage_items = plan.get("linkage") or plan.get("linkages") or []
+    jump_items = plan.get("jump") or plan.get("jumps") or []
+    linkage_report: list = []
+    jump_report: list = []
+    tips: list[str] = []
+    if linkage_items or jump_items:
+        live_views = panel_link.get_panel_views(client, str(scene_id), busi_flag="dataV")
+        if linkage_items:
+            linkage_report = panel_link.apply_linkage(
+                client, str(scene_id), live_views, linkage_items, replace=True
+            )
+            for t in panel_link.self_check({"linkage": linkage_report}):
+                panel_link.warn(t)
+                tips.append(t)
+        if jump_items:
+            jump_report = panel_link.apply_jump(
+                client, str(scene_id), live_views, jump_items, replace=True
+            )
+            for t in panel_link.self_check({"jump": jump_report}):
+                panel_link.warn(t)
+                tips.append(t)
+
     _print_json(
         {
             "id": str(scene_id),
@@ -813,9 +1124,89 @@ def cmd_apply(client: DataEaseClient, args: argparse.Namespace) -> None:
             "layout": (plan.get("_resolvedLayout") or {}).get("id"),
             "charts": len(plan.get("charts") or []),
             "decorations": len(plan.get("decorations") or []),
+            "linkage": linkage_report,
+            "jump": jump_report,
+            "tips": tips,
             "result": result,
         }
     )
+
+
+def cmd_defaults(_client: Optional[DataEaseClient], args: argparse.Namespace) -> None:
+    """离线查默认值：面板级全局配置 / 图表配置 / 联动 / 跳转。"""
+    if args.key:
+        hit = panel_schema.lookup(args.key)
+        if not hit:
+            sug = panel_schema.suggest(args.key)
+            hint = f"你是不是想查：{', '.join(sug)}" if sug else "运行 defaults --group canvas 看全部"
+            raise DataEaseClientError(f"没有名为「{args.key}」的配置项。{hint}")
+        _print_json(panel_schema.render_entry_json(hit))
+        return
+    if args.markdown:
+        text = (
+            panel_schema.render_full_markdown()
+            if args.all
+            else panel_schema.render_markdown(args.group)
+        )
+        if args.output:
+            Path(args.output).write_text(text, encoding="utf-8")
+            _print_json({"written": args.output, "bytes": len(text.encode("utf-8")), "lines": text.count("\n")})
+        else:
+            print(text)
+        return
+    if args.all:
+        _print_json({gid: panel_schema.render_json(gid) for gid, _n, _i in panel_schema.GROUPS})
+        return
+    _print_json(panel_schema.render_json(args.group))
+
+
+def cmd_lint_plan(_client: Optional[DataEaseClient], args: argparse.Namespace) -> None:
+    """离线自检 plan，不连接、不写入。"""
+    plan = _load_json(args.json, args.file)
+    if not isinstance(plan, dict):
+        raise DataEaseClientError("lint-plan 需要 --file/--json 计划对象")
+    try:
+        plan = apply_template_to_plan(plan)
+    except ValueError as e:
+        raise DataEaseClientError(str(e)) from e
+    issues = lint_plan(plan)
+    errors = [x for x in issues if x["level"] == "error"]
+    _print_json(
+        {
+            "ok": not errors,
+            "errorCount": len(errors),
+            "warnCount": len([x for x in issues if x["level"] == "warn"]),
+            "issues": issues,
+        }
+    )
+    if errors:
+        raise DataEaseClientError(f"自检发现 {len(errors)} 处错误，见 issues")
+
+
+def _plan_extras() -> dict:
+    """plan 里联动 / 跳转 / 图表配置的写法示范（apply 会忽略 _ 前缀键）。"""
+    return {
+        "_configDemo": {
+            "说明": "charts[].config 用友好键，键名必须在 defaults --group chart 清单内",
+            "样例": {"label.show": True, "label.color": "#8ab4f8", "legend.show": False, "xAxis.color": "#8ab4f8"},
+        },
+        "_linkageDemo": {
+            "说明": "源图表点击后联动其他图表；fields 省略则按同名自动配对",
+            "样例": [{"source": "各省销量", "targets": ["占比"], "fields": [{"source": "省份", "target": "省份"}]}],
+        },
+        "_jumpDemo": {
+            "说明": "linkType=outer 走外部链接（content 里 [字段名] 会被替换成点击值）；inner 走面板跳转",
+            "样例": [
+                {
+                    "source": "各省销量",
+                    "field": "省份",
+                    "linkType": "outer",
+                    "jumpType": "_blank",
+                    "content": "https://example.com/detail?prov=[省份]",
+                }
+            ],
+        },
+    }
 
 
 def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
@@ -834,8 +1225,10 @@ def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
                         "xAxis": ["省份"],
                         "yAxis": [{"name": "销售量", "summary": "sum"}],
                         "layout": {"left": 40, "top": 120, "width": 900, "height": 400},
+                        "config": {"label.show": True, "legend.show": False},
                     }
                 ],
+                **_plan_extras(),
             }
         )
         return
@@ -880,6 +1273,7 @@ def cmd_plan_example(_client: DataEaseClient, args: argparse.Namespace) -> None:
                 "contentSlots": tpl["contentSlots"],
                 "hint": "指定 layout 后可不写像素；也可用 slot 指定落入哪一格",
             },
+            **_plan_extras(),
         }
     )
 
@@ -963,7 +1357,29 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--file")
     ap.add_argument("--json")
     ap.add_argument("--append", action="store_true", help="追加组件而非整页替换")
+    ap.add_argument("--allow-lint-errors", action="store_true", help="自检有 error 仍强行写入（不推荐）")
     ap.set_defaults(func=cmd_apply)
+
+    df = sub.add_parser("defaults", help="查默认值（离线）：全局配置 / 图表配置 / 联动 / 跳转")
+    df.add_argument(
+        "--group",
+        default="canvas",
+        choices=["canvas", "chart", "linkage", "jump"],
+        help="canvas=面板级全局 / chart=单图表 / linkage=联动 / jump=跳转",
+    )
+    df.add_argument("--key", default=None, help="只查一项，如 customAttr.label.show")
+    df.add_argument("--all", action="store_true", help="输出全部分组")
+    df.add_argument("--markdown", action="store_true", help="输出 markdown 表格")
+    df.add_argument("--output", default=None, help="配合 --markdown 写到文件")
+    df.set_defaults(func=cmd_defaults)
+
+    lp = sub.add_parser("lint-plan", help="离线自检 plan（不连接、不写入）")
+    lp.add_argument("--file")
+    lp.add_argument("--json")
+    lp.set_defaults(func=cmd_lint_plan)
+
+    panel_link.add_linkage_parser(sub, busi_flag="dataV", label="数据大屏")
+    panel_link.add_jump_parser(sub, busi_flag="dataV", label="数据大屏")
 
     pe = sub.add_parser("plan-example", help="打印 plan JSON 示例")
     pe.add_argument(
@@ -980,7 +1396,7 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        offline = {"plan-example", "catalog", "layouts"}
+        offline = {"plan-example", "catalog", "layouts", "defaults", "lint-plan"}
         if args.command in offline:
             args.func(None, args)  # type: ignore[arg-type]
             return 0

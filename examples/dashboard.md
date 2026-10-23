@@ -6,7 +6,7 @@
 
 ```bash
 python dashboard.py tree
-python dashboard.py resolve-folder --name "AI专用组织"
+python dashboard.py resolve-folder --name "销售分析"
 python dashboard.py datasets --flat
 python dashboard.py fields --dataset-id <DATASET_ID> --simplify
 python dashboard.py catalog
@@ -46,7 +46,7 @@ python dashboard.py apply --id <DASHBOARD_ID> --file plan_append.json --append
 ## 空板
 
 ```bash
-python dashboard.py create-empty --name "空白仪表板" --folder-name "AI专用组织"
+python dashboard.py create-empty --name "空白仪表板" --folder-name "销售分析"
 ```
 
 ## 手写矩阵坐标
@@ -54,7 +54,7 @@ python dashboard.py create-empty --name "空白仪表板" --folder-name "AI专�
 ```json
 {
   "name": "自定义矩阵板",
-  "folderName": "AI专用组织",
+  "folderName": "销售分析",
   "datasetId": "<DATASET_ID>",
   "charts": [
     {
@@ -75,4 +75,35 @@ python dashboard.py create-empty --name "空白仪表板" --folder-name "AI专�
 }
 ```
 
-说明见 [references/dashboard.md](../references/dashboard.md)。
+## 图表样式、联动与跳转
+
+```bash
+python dashboard.py defaults --key component.chartTitle.color
+python dashboard.py lint-plan --file plan.json
+python dashboard.py apply --file plan.json
+```
+
+```json
+{
+  "canvas": {
+    "backgroundColor": "#f5f6f7",
+    "dashboard.gapSize": 8,
+    "component.chartTitle.color": "#1f2329",
+    "component.chartTitle.fontSize": 14
+  },
+  "linkage": [{ "source": "柱图", "targets": ["饼图"] }],
+  "jump": [
+    { "source": "柱图", "field": "省份", "linkType": "outer",
+      "content": "https://bi.example.com/region?p=[省份]" }
+  ]
+}
+```
+
+```bash
+python dashboard.py linkage list --id <ID>
+python dashboard.py linkage set  --id <ID> --source "柱图" --target "饼图"
+python dashboard.py jump fields  --id <ID> --source "柱图"
+python dashboard.py jump list    --id <ID>
+```
+
+说明见 [references/dashboard.md](../references/dashboard.md)、[references/panel_defaults.md](../references/panel_defaults.md)。

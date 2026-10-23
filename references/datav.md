@@ -18,9 +18,12 @@
 1. `catalog` / `layouts` — 图表类型、装饰与**排版模板**  
 2. `resolve-folder` — 在 **数据大屏树** 上定位文件夹（组织根 id 与数据源/数据集树通常不同）  
 3. `datasets` + `fields --simplify` — 选型与字段  
-4. 按需求拆解：选布局模板 → 选图类型、轴字段、聚合、过滤 → 填入各内容槽  
-5. `plan-example --layout grid_3x4|center_v2` → 写 plan → `apply`（可先 `preview-chart`）  
-6. `get --resource-table snapshot`（默认）核对；`publish --i-confirm-publish` 发布  
+4. 按需求拆解：选布局模板 → 选图类型、轴字段、聚合、过滤 → 填入各内容槽；需要时补 `config`（图表样式）、`canvas`（全局设置）  
+5. `plan-example` → 写 plan → **`lint-plan` 自检** → `apply`（内置取数预览与二次自检）  
+6. 联动/跳转：随 plan 的 `linkage` / `jump` 一起提交，或用 `linkage` / `jump` 子命令在图表保存后单独维护  
+7. `get --resource-table snapshot`（默认）核对；`publish --i-confirm-publish` 发布  
+
+不确定某项默认值就先查：`python datav.py defaults --key <配置项>`（离线，不需要连接）。
 
 ## 排版模板（优先使用）
 
@@ -62,6 +65,94 @@
 | 视频 `DeVideo` | 界面媒体栏；地址写入 **`videoLinks.web.src`**（plan 可写 `url`/`src`）；可选 `autoplay`/`loop`/`muted`；**不要**把视频地址写进 `propValue` |
 | 配色微调 | plan 传 `extraView.customAttr.basicStyle`：`colors` / `colorScheme`（如 `elegant`/`future`）/ `gradient`（柱条渐变）/ `alpha`（淡化）；避免经典深纯色堆砌 |
 
+## 全局默认配置（面板级）
+
+整块大屏的公共设置存在 `canvasStyleData`（JSON **字符串**）。plan 里写 `canvas`，键名与之一一对应；**支持点号路径**写嵌套项。
+
+```json
+{
+  "canvas": {
+    "backgroundColor": "#020408",
+    "width": 1920,
+    "height": 1080,
+    "screenAdaptor": "widthFirst",
+    "refreshBrowserEnable": true,
+    "refreshBrowserTime": 10,
+    "dashboard.gapSize": 8,
+    "component.chartTitle.show": false,
+    "component.chartTitle.color": "#ffffff",
+    "component.chartCommonStyle.backgroundImageEnable": true,
+    "component.chartCommonStyle.backgroundType": "outerImage",
+    "component.chartCommonStyle.outerImage": "https://example.com/frame.png"
+  }
+}
+```
+
+常用项（全量 100+ 项见 [panel_defaults.md](panel_defaults.md)，或 `defaults --group canvas`）：
+
+| 配置项 | 大屏默认 | 说明 |
+|--------|----------|------|
+| `width` / `height` | 1920 / 1080 | 画布尺寸；组件坐标按此像素摆放 |
+| `screenAdaptor` | `widthFirst` | 屏幕适配：`widthFirst` / `heightFirst` / `full` / `keepSize` |
+| `dashboardAdaptor` | `keepHeightAndWidth` | 预览适配；另可 `withWidth` |
+| `refreshBrowserEnable` + `refreshBrowserTime` + `refreshBrowserUnit` | false / 5 / minute | 整页定时刷新 |
+| `refreshViewEnable` + `refreshTime` + `refreshUnit` | false / 5 / minute | 图表定时刷新 |
+| `backgroundColor` | `#020408` | 画布底色 |
+| `backgroundImageEnable` + `background` | false / "" | 画布底图 |
+| `dashboard.gapSize` | 5 | 组件间隙（`dashboard.gap`=`yes` 时生效） |
+| `dashboard.resultCount` | 1000 | 面板级结果集条数（`resultMode`=`all` 时） |
+| `component.chartTitle.*` | show=true / 16px / `#ffffff` / 左对齐·顶部 | 统一组件标题风格 |
+| `component.chartCommonStyle.*` | 内置边框 `board/board_1.svg` | 统一组件背景：底色、边框图、内边距、圆角、毛玻璃 |
+| `component.seniorStyleSetting.linkageIconColor` | `#ffffff` | 联动角标颜色 |
+
+**规则**
+
+- 画布级「统一风格」只在 `openCommonStyle=true` 时生效；组件自身的 `commonBackground` 会覆盖它
+- `backgroundType` / `opacity` 是历史字段（⛔ 界面无入口），不要依赖
+- 改 `component.chartTitle.*` 会同时影响所有图表标题；只想改一张图，用 `charts[].config.text.*` 或 `extraView.customStyle.text`
+
+## 图表配置（单张）
+
+图表样式写在 `canvasViewInfo[组件id]`，分三个容器：
+
+| 容器 | 管什么 | 典型项 |
+|------|--------|--------|
+| `customAttr` | 图形本身：配色、标签、提示框、指标卡、表格 | `basicStyle.colors`、`label.show`、`tooltip.trigger`、`tableHeader.*` |
+| `customStyle` | 图表外框：标题、图例、坐标轴 | `text.*`、`legend.*`、`xAxis.color`、`yAxis.fontSize` |
+| `senior` | 高级：空值、缩放、辅助线、阈值、滚动 | `functionCfg.emptyDataStrategy`、`sliderShow`、`threshold` |
+
+plan 里用 `charts[].config` 写**友好键**，键名必须在清单内（写错会立刻报错并给出近似项，不会静默丢配置）：
+
+```json
+{
+  "type": "bar",
+  "title": "各省销量",
+  "xAxis": ["省份"],
+  "yAxis": [{ "name": "销售量", "summary": "sum" }],
+  "config": {
+    "label.show": true,
+    "label.color": "#8ab4f8",
+    "legend.show": false,
+    "xAxis.color": "#8ab4f8",
+    "tooltip.backgroundColor": "#0b1a33",
+    "basicStyle.gradient": true,
+    "senior.emptyDataStrategy": "breakLine"
+  }
+}
+```
+
+- 友好键前缀决定落点：`label.` / `tooltip.` / `indicator.` / `tableHeader.` → `customAttr`；`text.` / `legend.` / `xAxis.` / `yAxis.` → `customStyle`；`senior.` → `senior`
+- 也可直接写全路径：`customAttr.basicStyle.colors`、`customStyle.legend.vPosition`
+- 顶层可写：`title` / `resultCount` / `resultMode` / `refreshViewEnable` / `refreshTime` / `refreshUnit` / `customFilter` / `linkageActive` / `jumpActive`
+- 需要原样透传产品字段时用 `charts[].extraView`（深合并 `customAttr` / `customStyle` / `senior` 一层）
+- 项目含义与默认值：`python datav.py defaults --group chart`，单项 `--key label.show`
+
+**易踩坑**
+
+- 提示框默认**白底黑字**；把 `tooltip.color` 改成白字在大屏上会看不见
+- `label.show` 默认关；饼图与矩形树图在建图时会被脚本打开（产品 setupDefaultOptions 行为）
+- 大屏默认配色走图表自身 `customAttr.basicStyle.colors`；面板级 `component.chartColor` 只对仪表板生效
+
 ## 图表轴与聚合（不得出错）
 
 | 图类型 | 轴规则 |
@@ -77,6 +168,112 @@
 - 文本/时间类指标默认倾向 `count`；数值默认 `sum`。用户指定优先。  
 - **图表内过滤** `customFilter`：`{ "logic":"and", "items":[ { "type":"item", "fieldId", "term", "value", ... } ] }`。`term`：`eq/not_eq/lt/le/gt/ge/in/like/null/not_null/between` 等。无过滤用 `{}`。  
 - **查询组件 VQuery**：条件在组件 `propValue`，运行时注入图表；结构复杂，须按产品配置核对 `checkedFields` / `checkedFieldsMap`，勿与 `customFilter` 混用错位。
+
+## 图表联动
+
+界面路径：选中图表 → 高级 → 联动设置 → 勾选目标图表 → 配关联字段 → 保存。
+
+**运行时生效要同时满足三条**（少一条就"配了但点了没反应"）：
+
+1. 源图表 `linkageActive=true`（图表 · 高级 · 联动 开关）
+2. 联动关系自身 `linkage_active=true`（保存时 `active` 不为 false）
+3. 关联字段有成对的 `sourceField` / `targetField`（数据集字段 id）
+
+plan 写法（`apply` 会在图表落库后自动写入）：
+
+```json
+{
+  "charts": [
+    { "type": "bar", "title": "各省销量", "xAxis": ["省份"], "yAxis": [{"name": "销售量", "summary": "sum"}] },
+    { "type": "pie", "title": "销量占比", "xAxis": ["省份"], "yAxis": [{"name": "销售量", "summary": "sum"}] }
+  ],
+  "linkage": [
+    {
+      "source": "各省销量",
+      "targets": ["销量占比"],
+      "fields": [{ "source": "省份", "target": "省份" }]
+    }
+  ]
+}
+```
+
+- `source` / `targets` 写**图表标题或组件 id**；标题重名会报错并要求改用 id（`lint-plan` 会提前警告重名）
+- `fields` 可省略：源图与目标图同数据集时字段 id 天然一致，跨数据集按**同名字段**配对；一条都配不上会报错而不是静默成功
+- `active: false`：只保留关系不启用
+- 点击行为由画布级 `actionSelection.linkageActive` 决定：`custom`（默认，弹浮框让用户选联动或下钻）/ `auto`（点击同时触发联动和下钻）
+
+单独维护（图表须已保存）：
+
+```bash
+python datav.py linkage list   --id <DV_ID>
+python datav.py linkage set    --id <DV_ID> --source "各省销量" --target "销量占比" --field 省份=省份
+python datav.py linkage set    --id <DV_ID> --file linkage.json          # 复杂配置走文件
+python datav.py linkage set    --id <DV_ID> --source "各省销量" --target "销量占比" --replace
+python datav.py linkage active --id <DV_ID> --source "各省销量" [--off]
+python datav.py linkage remove --id <DV_ID> --source "各省销量"
+```
+
+- `set` 默认**合并**：只覆盖本次提到的目标，其它目标保持原样；`--replace` 才清空该源图表全部联动
+- 只删关系不会关图表总开关；反过来关总开关也不会删关系
+
+## 图表跳转
+
+界面路径：选中图表 → 高级 → 跳转设置 → 勾选触发字段 → 选跳转类型 → 填内容/选目标面板 → 保存。
+
+**运行时生效要同时满足两条**：源图表 `jumpActive=true`，且该字段 `checked=true`（内部跳转还需目标面板 id）。
+
+| 项 | 取值 | 说明 |
+|----|------|------|
+| `linkType` | `outer`（默认）/ `inner` | 外部链接 / 面板内跳转 |
+| `jumpType` | `_self` / `_blank`（默认）/ `newPop` | 当前页面 / 新开页面 / 弹窗页面 |
+| `windowSize` | `large` / `middle`（默认）/ `small` | 仅 `jumpType=newPop` 生效 |
+| `content` | ≤4000 字符 | `linkType=outer` 必填 |
+| `attachParams` | false（默认） | 把当前过滤条件作为外部参数带给目标（内部跳转） |
+| `targetDvId` | 面板 id | `linkType=inner` 必填 |
+| `targets[].type` | `view` / `filter` / `outParams` | 目标：图表 / 过滤组件 / 外部参数 |
+
+**触发字段必须在图表已用字段里**（`xAxis` / `xAxisExt` / `extStack` / `yAxis` / `yAxisExt` / `drillFields`）。不在其中的字段，界面里根本不会出现，写了也会被脚本拒绝。先用 `jump fields --id <DV_ID> --source "图表名"` 确认。
+
+**链接占位符**：界面里写 `[字段名]`，保存时会转成 `[字段id]`，点击时替换成该行实际值。直接写 `[省份]` 即可，脚本负责换算：
+
+```json
+{
+  "jump": [
+    {
+      "source": "各省销量",
+      "field": "省份",
+      "linkType": "outer",
+      "jumpType": "_blank",
+      "content": "https://bi.example.com/detail?prov=[省份]&y=[年份]"
+    },
+    {
+      "source": "各省销量",
+      "field": "省份",
+      "linkType": "inner",
+      "jumpType": "newPop",
+      "windowSize": "large",
+      "targetDvId": "<目标大屏ID>",
+      "targets": [{ "view": "明细表", "fields": [{ "source": "省份", "target": "省份" }] }]
+    }
+  ]
+}
+```
+
+单独维护：
+
+```bash
+python datav.py jump list   --id <DV_ID>
+python datav.py jump fields --id <DV_ID> --source "各省销量"
+python datav.py jump set    --id <DV_ID> --source "各省销量" --field 省份 \
+       --link-type outer --jump-type _blank --content "https://x/detail?prov=[省份]"
+python datav.py jump set    --id <DV_ID> --file jump.json     # 内部跳转/多字段建议走文件
+python datav.py jump active --id <DV_ID> --source "各省销量" [--off]
+python datav.py jump remove --id <DV_ID> --source "各省销量"
+```
+
+- `set` 默认**合并**：只覆盖本次提到的字段，其它字段已有跳转保留；`--replace` 才整体重建
+- 内部跳转的目标图表、过滤组件、外部参数名都能被自动识别；配不上会列出目标面板里的全部候选
+- 发布后跳转随快照一起生效；只改跳转不重新发布会停留在编辑稿
 
 ## plan JSON 要点
 
@@ -132,16 +329,42 @@
 
 也可用中文别名 `kind: "图片"` / `"视频"`。完整 `propValue` / `videoLinks`（从界面导出）可原样传入。
 
+## 保存前自检（推荐）
+
+`apply` 内置离线自检，**有 error 直接阻止写入**，不会留下半成品大屏。也可单独跑：
+
+```bash
+python datav.py lint-plan --file plan.json
+```
+
+拦得住的问题：图种不在清单、缺 `datasetId`、指标卡/明细表轴放错、单指标图种给了多个指标、`config` 键名写错、联动缺 `targets`、跳转缺字段或 `content`、内部跳转缺 `targetDvId`。
+只警告不阻断的：坐标越界、标题重名、堆叠图没给 `extStack`、把 `jump`/`linkage` 写在了 `charts[]` 里面（**这类不会生效**，必须写 plan 顶层并给 `source`）。
+
+`config` 的简写键必须命中注册表，`label.shw` 这种笔误会被当成未知项拦下并给出近似项；确有必要写注册表之外的字段时，改用完整路径（`customAttr.` / `customStyle.` / `senior.` 开头）跳过校验。
+
+确认要强行写入时加 `--allow-lint-errors`（不推荐）。
+
 ## 主要 API
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | POST | /de2api/dataVisualization/tree | `{ busiFlag:"dataV" }` |
 | POST | /de2api/dataVisualization/saveCanvas | 新建 |
-| POST | /de2api/dataVisualization/updateCanvas | 更新画布 |
+| POST | /de2api/dataVisualization/updateCanvas | 更新画布（组件 + canvasViewInfo） |
 | POST | /de2api/dataVisualization/findById | 详情（**编辑稿**用 `resourceTable:snapshot`；未发布时 `core` 可能为空） |
 | POST | /de2api/dataVisualization/updatePublishStatus | 发布 `status=1` / 取消 `0`（需 `activeViewIds`） |
 | POST | /de2api/chart/listByDQ/{datasetId}/{chartId} | 维度/指标字段 |
 | POST | /de2api/chartData/getData | 图表取数预览 |
+| POST | /de2api/linkage/getViewLinkageGatherArray | 联动候选（目标图表 + 其字段 + 已有配置） |
+| POST | /de2api/linkage/saveLinkage | 保存联动 `{dvId, sourceViewId, linkageInfo[]}` |
+| POST | /de2api/linkage/updateLinkageActive | 源图表联动总开关 |
+| POST | /de2api/linkage/removeLinkage | 删除某图表的全部联动 |
+| GET | /de2api/linkage/getVisualizationAllLinkageInfo/{dvId}/{resourceTable} | 面板联动全貌 |
+| POST | /de2api/linkJump/updateJumpSet | 保存跳转（整表覆盖，需回传未改动字段） |
+| POST | /de2api/linkJump/updateJumpSetActive | 源图表跳转总开关 |
+| POST | /de2api/linkJump/removeJumpSet | 删除某图表全部跳转 |
+| GET | /de2api/linkJump/queryWithViewId/{dvId}/{viewId} | 单图表跳转明细（含全部候选字段） |
+| GET | /de2api/linkJump/queryVisualizationJumpInfo/{dvId}/{resourceTable} | 面板跳转全貌 |
+| GET | /de2api/linkJump/viewTableDetailList/{dvId} | 目标面板可跳转项（图表/过滤组件/外部参数） |
 
-文件夹定位须在 **dataV 树**；写入范围受 `DE_ALLOWED_WRITE_SCOPE` 约束（须含大屏侧允许节点）。
+联动与跳转都写**编辑稿（snapshot）**；发布后才同步到 `core`。文件夹定位须在 **dataV 树**；写入范围受 `DE_ALLOWED_WRITE_SCOPE` 约束（须含大屏侧允许节点）。
