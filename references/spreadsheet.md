@@ -23,9 +23,12 @@
 
 1. `spreadsheet.py resolve-folder --name "目标文件夹"`（电子表格树，勿用其它树组织根 id）
 2. 编写规格 JSON（可用 `spreadsheet.py template` 生成模板）
-3. `spreadsheet.py create --name "名称" --folder-name "目标文件夹" --file spec.json`
-4. （迭代）调整规格后 `spreadsheet.py edit --id <ID> --session-created --file spec_v2.json`
-5. 用户确认内容后 `spreadsheet.py publish --id <ID>`
+3. **`spreadsheet.py lint --file spec.json` 预览风险**——`create` / `edit` 内置同一守卫，有 `error` 会直接拒绝写入（见 [spreadsheet_parity.md](spreadsheet_parity.md)）
+4. `spreadsheet.py create --name "名称" --folder-name "目标文件夹" --file spec.json`
+5. （迭代）调整规格后 `spreadsheet.py edit --id <ID> --session-created --file spec_v2.json`
+6. 用户确认内容后 `spreadsheet.py publish --id <ID>`
+
+> **生成前必读 [spreadsheet_parity.md](spreadsheet_parity.md)**：它回答「哪些写法界面上有、哪些只在快照里有」。界面无入口的状态，用户既看不到入口也改不回来，交付时必须说明。
 
 **两个视图**：`get`（findById）返回**发布版**——未发布的新改动不在其中；`get-edit`（findEditById）返回**编辑稿**（含全部改动）。校验最近一次编辑结果请用 `get-edit`；发布后两者一致（status: 0 未发布 / 1 已发布 / 2 已保存未发布）。
 
@@ -50,6 +53,8 @@
 | `datasetTables` | `数组` | 明细表：把数据集字段绑定到某起始格渲染 |
 | `filterComponents` | `数组` | 查询组件：按时间（年/月/日）或文本下拉过滤明细表，至多一条（工作簿级单例） |
 
+**默认值与界面位置**：每一项的**类型、默认值、界面入口、可达性**见 [spreadsheet_defaults.md](spreadsheet_defaults.md)（共 105 项，由 `spreadsheet.py defaults --markdown` 生成）；不确定某项默认值时用 `spreadsheet.py defaults --key <键名>` 查，不要凭印象。
+
 **视觉与版式**：标题区 / 表头 / 数据区 / 合计行 / 辅注的五段式结构、色彩角色、字号阶梯、行分隔与对齐规则见 [spreadsheet_visual.md](spreadsheet_visual.md)。用 `theme` 即可满足大部分规范；`spreadsheet.py template --theme <名>` 直接产出合规样板。
 
 ### sheets[] 工作表
@@ -61,8 +66,8 @@
 | `freeze` | 冻结至某格，如 `"A2"` 冻结首行；或 `{xSplit,ySplit,startRow,startColumn}` |
 | `hidden` | `true` 隐藏该工作表 |
 | `tabColor` | 工作表标签颜色 `#RRGGBB` |
-| `showGridlines` | `false` 隐藏网格线 |
-| `rightToLeft` | `true` 从右到左 |
+| `showGridlines` | `false` 隐藏网格线（⚠️ 界面无此开关，见 [spreadsheet_parity.md](spreadsheet_parity.md)） |
+| `rightToLeft` | `true` 从右到左（⚠️ 界面无此开关，见 [spreadsheet_parity.md](spreadsheet_parity.md)） |
 | `columnWidths` | `{"A": 120, "B:D": 90}` 列宽（支持区间） |
 | `rowHeights` | `{"1": 32, "2:3": 24}` 行高（1 起始，支持区间） |
 | `merges` | `["A1:E1", ...]` 合并单元格 |
@@ -76,7 +81,7 @@
 | `f` | 公式，如 `"=SUM(B3:B4)"`（可不带 =，自动补） |
 | `style` / `inlineStyle` | 命名样式 / 内联样式（键同命名样式） |
 | `richText` | 富文本 `[{text, style}]`，与 `v`/`f` 互斥；分段样式键同命名样式 |
-| `type` | `"text"` 强制文本（保留前导零）；`"number"` 强制数值 |
+| `cells.type` | `"text"` 强制文本（保留前导零）；`"number"` 强制数值。⚠️ **界面无此入口，写入后不可逆**，详见 [spreadsheet_parity.md](spreadsheet_parity.md) |
 
 ### styles 样式键
 
@@ -198,6 +203,8 @@
 ## 范围外（请用户在产品界面操作）
 
 超链接（富文本链接）、透视表、单元格图片与浮动图片、明细表/透视表的高级样式（表头/斑马纹/汇总行等）、查询组件的高级样式。
+
+这些能力**界面有入口**，只是本 skill 不生成——如实告诉用户在界面完成即可，不要假装能做到，也不要用近似写法硬凑。其余「界面有 / 界面无」的完整对照见 [spreadsheet_parity.md](spreadsheet_parity.md)。
 
 ## 接口
 

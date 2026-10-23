@@ -934,6 +934,530 @@ def compile_workbook(spec: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 离线自检（lint）：create / edit 之前发现「界面不会产生的状态」
+# ---------------------------------------------------------------------------
+
+# 产品服务端对明细表取数的默认上限（超出会被截断）
+RESULT_LIMIT_MAX = 100000
+
+
+def _iter_range(rng: dict):
+    for r in range(rng["startRow"], rng["endRow"] + 1):
+        for c in range(rng["startColumn"], rng["endColumn"] + 1):
+            yield r, c
+
+
+def _ranges_intersect(a: dict, b: dict) -> bool:
+    return not (
+        a["endRow"] < b["startRow"]
+        or b["endRow"] < a["startRow"]
+        or a["endColumn"] < b["startColumn"]
+        or b["endColumn"] < a["startColumn"]
+    )
+
+
+def lint_spec(spec: dict) -> list[dict]:
+    """检查规格中与产品界面行为不一致、或结构上不成立的地方。
+
+    返回问题清单 [{level, code, msg, hint}]；level ∈ error / warn / info。
+    纯本地运算，不访问网络。
+    """
+    issues: list[dict] = []
+
+    def add(level: str, code: str, msg: str, hint: str = "") -> None:
+        issues.append({"level": level, "code": code, "msg": msg, "hint": hint})
+
+    try:
+        wb = compile_workbook(spec)
+    except DataEaseClientError as e:
+        add("error", "compile", f"规格无法编译：{e}", "字段与取值范围见 references/spreadsheet.md")
+        return issues
+
+    sheets: dict = wb.get("sheets") or {}
+
+    # ---- 1. 合并区：界面合并会清空左上角以外的内容 ----
+    for sh in sheets.values():
+        cell_data = sh.get("cellData") or {}
+        merges = sh.get("mergeData") or []
+        for rng in merges:
+            cleared = []
+            for r, c in _iter_range(rng):
+                if r == rng["startRow"] and c == rng["startColumn"]:
+                    continue
+                cell = (cell_data.get(r) or {}).get(c) or {}
+                if any(k in cell for k in ("v", "f", "p")):
+                    cleared.append((r, c))
+            if cleared:
+                add(
+                    "error",
+                    "merge_value",
+                    f"工作表「{sh.get('name')}」合并区内有 {len(cleared)} 个单元格带值/公式，"
+                    "界面上合并单元格会清空左上角以外的内容，这些值不会显示",
+                    "把值集中到合并区左上角，或缩小合并范围",
+                )
+        # 合并区超出工作表边界
+        for rng in merges:
+            if rng["endRow"] >= sh.get("rowCount", 0) or rng["endColumn"] >= sh.get("columnCount", 0):
+                add(
+                    "warn",
+                    "merge_out_of_bounds",
+                    f"工作表「{sh.get('name')}」有合并区超出 rowCount/columnCount",
+                    "扩大 rowCount/columnCount，或缩小合并范围",
+                )
+                break
+        # 合并区互相重叠
+        for i in range(len(merges)):
+            for j in range(i + 1, len(merges)):
+                if _ranges_intersect(merges[i], merges[j]):
+                    add(
+                        "error",
+                        "merge_overlap",
+                        f"工作表「{sh.get('name')}」存在相互重叠的合并区",
+                        "重叠的合并在界面上无法产生，须改为不重叠的范围",
+                    )
+                    break
+
+    # ---- 2. 界面无入口的写法（界面上改不回来，只能回到 skill 改） ----
+    type_cells: dict[str, list] = {}
+    for sh_spec in spec.get("sheets") or []:
+        name = str(sh_spec.get("name") or "")
+        if sh_spec.get("rightToLeft"):
+            add(
+                "warn",
+                "ui_unreachable",
+                f"工作表「{name}」设置了 rightToLeft，界面没有该开关",
+                "确认确有必要；此后只能通过 skill 调整，用户无法在界面改回",
+            )
+        if sh_spec.get("showGridlines") is False:
+            add(
+                "warn",
+                "ui_unreachable",
+                f"工作表「{name}」关闭了网格线，界面没有该开关",
+                "关闭网格线属打印/展示向的取舍；交付时说明「以后只能通过 skill 恢复」",
+            )
+        for ref, cell in (sh_spec.get("cells") or {}).items():
+            if isinstance(cell, dict) and cell.get("type") in ("text", "number"):
+                type_cells.setdefault(name, []).append(str(ref))
+    for name, refs in type_cells.items():
+        sample = "、".join(refs[:5]) + ("等" if len(refs) > 5 else "")
+        add(
+            "warn",
+            "ui_unreachable",
+            f"工作表「{name}」有 {len(refs)} 个单元格强制了值类型（{sample}），"
+            "界面没有「转文本 / 转数字」入口",
+            "适合编码类（保留前导零）；若这些列以后需要在界面上换算，改用 numberFormat 而非强制类型",
+        )
+
+    # ---- 3. 数据验证 ----
+    for i, rule in enumerate((spec.get("validations") or [])):
+        rng = _range_to_irange(str(rule.get("range") or "A1"))
+        if rule.get("type") in ("list", "listMultiple"):
+            has_opts = rule.get("values") is not None or rule.get("formula") or rule.get("formula1")
+            if not has_opts:
+                add(
+                    "error",
+                    "dv_no_options",
+                    f"validations[{i}]（下拉）没有提供选项",
+                    "用 values 传选项数组，或用 formula 引用选项区域",
+                )
+            mode = (rule.get("renderMode") or "arrow").strip().lower()
+            if mode == "chip" and not rule.get("chipColors"):
+                add(
+                    "info",
+                    "dv_chip_default",
+                    f"validations[{i}] 使用 chip 渲染但未配配色，界面会落到默认灰底芯片",
+                    "需要芯片样式时逐项配色并保证对比度；一般用 arrow",
+                )
+        sid = rule.get("sheet")
+        sh = next((s for s in sheets.values() if s.get("name") == sid), None)
+        if sh and (rng["endRow"] >= sh.get("rowCount", 0) or rng["endColumn"] >= sh.get("columnCount", 0)):
+            add("warn", "dv_out_of_bounds", f"validations[{i}] 范围超出行列数")
+
+    # ---- 4. 自动筛选 ----
+    for i, item in enumerate(spec.get("filters") or []):
+        sid = item.get("sheet")
+        sh = next((s for s in sheets.values() if s.get("name") == sid), None)
+        if not sh:
+            continue
+        rng = _range_to_irange(str(item.get("range") or "A1"))
+        header = (sh.get("cellData") or {}).get(rng["startRow"]) or {}
+        if not any(
+            (header.get(c) or {}).get("v") not in (None, "")
+            for c in range(rng["startColumn"], rng["endColumn"] + 1)
+        ):
+            add(
+                "warn",
+                "filter_empty_header",
+                f"filters[{i}] 范围首行是空的，筛选按钮会落在没有标题的行上",
+                "把 range 指向真正的表头行",
+            )
+        if item.get("columns"):
+            add(
+                "info",
+                "filter_preset",
+                f"filters[{i}] 预置了筛选条件，界面一打开就处于已筛选状态",
+                "交付时告知用户「已按 X 筛选，表头可调整」；通常只给范围更稳妥",
+            )
+
+    # ---- 5. 明细表 ----
+    for i, item in enumerate(spec.get("datasetTables") or []):
+        fields = item.get("fields") or []
+        if not fields:
+            add(
+                "error",
+                "dt_no_fields",
+                f"datasetTables[{i}] 没有提供 fields",
+                "用 dataset.py get 取数据集字段后填入",
+            )
+        for f in fields:
+            if not f.get("dataeaseName"):
+                add(
+                    "warn",
+                    "dt_field_incomplete",
+                    f"datasetTables[{i}] 字段「{f.get('name')}」缺少 dataeaseName",
+                    "dataeaseName 缺失会导致渲染取数对不上字段",
+                )
+                break
+        limit = int(item.get("resultLimit") or 100)
+        if limit > RESULT_LIMIT_MAX:
+            add(
+                "warn",
+                "dt_limit_clamped",
+                f"datasetTables[{i}] resultLimit={limit} 超过服务端上限 {RESULT_LIMIT_MAX}，会被截断",
+                "改为 ≤ 100000 的值，避免与实际取数条数不一致",
+            )
+        # 明细表渲染块与手工单元格/合并重叠
+        sid = item.get("sheet")
+        sh = next((s for s in sheets.values() if s.get("name") == sid), None)
+        if sh and fields:
+            try:
+                start = _ref_to_rc(str(item.get("startCell") or "A1"))
+            except DataEaseClientError:
+                continue
+            block = {
+                "startRow": start[0],
+                "startColumn": start[1],
+                "endRow": start[0] + 1,
+                "endColumn": start[1] + max(len(fields) - 1, 0),
+            }
+            for rng in sh.get("mergeData") or []:
+                if _ranges_intersect(rng, block):
+                    add(
+                        "warn",
+                        "dt_overlap",
+                        f"datasetTables[{i}] 的起始区域与合并单元格重叠",
+                        "明细表会盖住手工内容，把 startCell 移到空白区域",
+                    )
+                    break
+            occupied = [
+                (r, c)
+                for r, row in (sh.get("cellData") or {}).items()
+                for c, cell in row.items()
+                if cell.get("v") not in (None, "") and _ranges_intersect(
+                    {"startRow": r, "endRow": r, "startColumn": c, "endColumn": c}, block
+                )
+            ]
+            if occupied:
+                add(
+                    "warn",
+                    "dt_overlap",
+                    f"datasetTables[{i}] 起始区域内有 {len(occupied)} 个手工单元格，会被明细表覆盖",
+                    "把 startCell 移到空白区域",
+                )
+
+    # ---- 6. 查询组件 ----
+    for i, item in enumerate(spec.get("filterComponents") or []):
+        if not item.get("conditions"):
+            add(
+                "error",
+                "fc_no_conditions",
+                f"filterComponents[{i}] 没有 conditions，查询组件会是一个空壳",
+                "至少给出一个过滤条件；不用查询组件就不要声明 filterComponents",
+            )
+
+    # ---- 7. 空表 ----
+    for sh in sheets.values():
+        has_cells = any(
+            any(cell.get("v") not in (None, "") or cell.get("f") or cell.get("p")
+                for cell in row.values())
+            for row in (sh.get("cellData") or {}).values()
+        )
+        if not has_cells and not spec.get("datasetTables"):
+            add(
+                "warn",
+                "empty_sheet",
+                f"工作表「{sh.get('name')}」没有任何内容",
+                "确认是否需要该工作表",
+            )
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# 规格元信息注册表：类型 / 默认值 / 界面位置 / 可达性（单一事实来源）
+# 文档与 defaults 命令都据此输出，避免"文档写的默认值"与"代码实际默认值"漂移。
+# ---------------------------------------------------------------------------
+
+UI_OK, UI_WARN, UI_NONE = "ok", "warn", "none"
+UI_MARK = {UI_OK: "✅", UI_WARN: "⚠️", UI_NONE: "⛔"}
+UI_LABEL = {UI_OK: "界面可编辑", UI_WARN: "界面受限", UI_NONE: "界面无入口"}
+
+
+def _f(key: str, typ: str, default: str, ui: str, where: str, note: str = "") -> dict:
+    return {"key": key, "type": typ, "default": default, "ui": ui, "uiWhere": where, "note": note}
+
+
+SPEC_SCHEMA: list[dict] = [
+    {
+        "group": "顶层（spec）",
+        "items": [
+            _f("theme", "business|finance|fresh|minimal", "无（不注入主题样式；`template` 命令默认 business）", UI_NONE,
+               "无直接入口（主题只是样式集合）", "不写 theme 时须自建 styles 或接受默认外观"),
+            _f("styles", "对象 {样式名: 样式}", "{}", UI_OK, "功能区·字体/版式/数字格式", "单元格用 style 引用，同一份样式可复用"),
+            _f("sheets", "数组", "必填（≥1 个）", UI_OK, "工作表标签", "顺序即展示顺序"),
+            _f("conditionalFormats", "数组", "[]", UI_OK, "功能区·条件格式"),
+            _f("validations", "数组", "[]", UI_OK, "功能区·数据验证"),
+            _f("filters", "数组", "[]", UI_OK, "功能区·筛选（表头按钮）", "每表一条"),
+            _f("notes", "数组", "[]", UI_OK, "功能区·插入 → 批注"),
+            _f("slashCells", "数组", "[]", UI_OK, "功能区·斜线格"),
+            _f("datasetTables", "数组", "[]", UI_OK, "功能区·插入 → 明细表"),
+            _f("filterComponents", "数组", "[]", UI_OK, "功能区·查询组件", "至多一条（工作簿级单例）"),
+        ],
+    },
+    {
+        "group": "sheets[] 工作表",
+        "items": [
+            _f("name", "字符串", "必填", UI_OK, "工作表标签（双击重命名）"),
+            _f("rowCount", "整数", "1000", UI_OK, "右键·插入行"),
+            _f("columnCount", "整数", "26", UI_OK, "右键·插入列"),
+            _f("defaultColumnWidth", "整数(px)", "93", UI_OK, "拖拽列宽"),
+            _f("defaultRowHeight", "整数(px)", "27", UI_OK, "拖拽行高"),
+            _f("freeze", "'B2' 或 {xSplit,ySplit,startRow,startColumn}", "无（不冻结）", UI_OK, "功能区·冻结"),
+            _f("hidden", "布尔", "false", UI_OK, "工作表标签右键"),
+            _f("tabColor", "#RRGGBB", "无（默认标签色）", UI_OK, "工作表标签右键"),
+            _f("showGridlines", "布尔", "true", UI_NONE, "无（开关原在菜单栏，菜单栏不显示）", "写 false 后用户无法在界面恢复"),
+            _f("rightToLeft", "布尔", "false", UI_NONE, "无", "写 true 后用户无法在界面改回"),
+            _f("merges", "['A1:C1', …]", "[]", UI_OK, "功能区·合并单元格", "合并会清空左上角以外的内容"),
+            _f("columnWidths", "{'A':120,'B:D':90}", "{}（用 defaultColumnWidth）", UI_OK, "拖拽列宽"),
+            _f("rowHeights", "{'1':32,'2:3':24}（1 起始）", "{}（用 defaultRowHeight）", UI_OK, "拖拽行高"),
+            _f("cells", "{单元格引用: 单元格}", "{}", UI_OK, "单元格内编辑"),
+        ],
+    },
+    {
+        "group": "cells{} 单元格",
+        "items": [
+            _f("v", "数字/字符串", "无（空单元格）", UI_OK, "单元格内输入"),
+            _f("f", "字符串（可不带 =，自动补）", "无", UI_OK, "单元格内输入 / 函数下拉"),
+            _f("style", "命名样式名", "无（无样式，走产品默认外观）", UI_OK, "功能区·字体/版式/数字格式"),
+            _f("inlineStyle", "对象（键同 styles）", "无", UI_OK, "同上"),
+            _f("richText", "[{text, style}]", "无（与 v/f 互斥）", UI_OK, "单元格内富文本编辑"),
+            _f("type", "text|number", "无（自动识别值类型）", UI_NONE, "无（'文本转数字'被隐藏，无反向操作）",
+               "写入后不可逆；仅用于编码类保留前导零"),
+        ],
+    },
+    {
+        "group": "styles{} 样式键（不设置 = 继承单元格/产品默认）",
+        "items": [
+            _f("bold / italic / underline / strike", "布尔", "false", UI_OK, "功能区·字体组"),
+            _f("font", "字体名", "无（产品默认字体）", UI_OK, "功能区·字体"),
+            _f("fontSize", "数字(pt)", "无（产品默认字号）", UI_OK, "功能区·字号"),
+            _f("bg", "#RRGGBB", "无（透明）", UI_OK, "功能区·背景色"),
+            _f("color", "#RRGGBB", "无（默认字色）", UI_OK, "功能区·文字颜色"),
+            _f("align", "left|center|right|justified", "无（常规，按值类型自动）", UI_OK, "功能区·水平对齐"),
+            _f("valign", "top|middle|bottom", "无（走产品默认）", UI_OK, "功能区·垂直对齐"),
+            _f("wrap", "布尔", "false", UI_OK, "功能区·自动换行"),
+            _f("numberFormat", "如 #,##0.00 / 0.0% / ¥#,##0.00", "无（常规）", UI_OK, "功能区·数字格式/百分比/货币"),
+            _f("border", "all|outline|top|bottom|left|right", "无（无边框）", UI_OK, "功能区·边框",
+               "线型固定为细线"),
+            _f("borderColor", "#RRGGBB", "#999999（仅在 border 存在时生效）", UI_OK, "功能区·边框颜色"),
+        ],
+    },
+    {
+        "group": "validations[] 数据验证",
+        "items": [
+            _f("sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("range", "'B4:B20'", "'A1'", UI_OK, "数据验证面板·作用范围"),
+            _f("type", "list|listMultiple|decimal|whole|textLength|date|time|checkbox|custom|any", "必填", UI_OK, "数据验证·条件类型"),
+            _f("renderMode", "arrow|text|chip", "arrow（产品缺省其实是 chip，脚本刻意改为 arrow）", UI_WARN,
+               "数据验证·渲染方式", "chip 需逐项配色，缺省会灰底浅字"),
+            _f("values", "数组", "无（list 必填之一）", UI_OK, "数据验证·选项来源=自定义"),
+            _f("formula", "如 =$F$2:$F$5", "无", UI_OK, "数据验证·选项来源=引用数据"),
+            _f("operator", "同条件格式数值比较", "无", UI_OK, "数据验证·条件"),
+            _f("allowBlank", "布尔", "true", UI_OK, "数据验证·忽略空值"),
+            _f("promptTitle / prompt", "字符串", "无（不显示输入提示）", UI_OK, "数据验证·输入提示"),
+            _f("errorTitle / error", "字符串", "无（不显示错误提示）", UI_OK, "数据验证·错误提示"),
+        ],
+    },
+    {
+        "group": "filters[] 自动筛选",
+        "items": [
+            _f("sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("range", "'A3:F200'（首行为表头）", "'A1'", UI_OK, "功能区·筛选"),
+            _f("columns", "数组", "[]（只给范围，表头出现筛选按钮）", UI_OK, "表头筛选面板", "预置条件会让表一打开就处于筛选态"),
+            _f("columns[].col", "'C'（单列）", "必填", UI_OK, "表头筛选面板"),
+            _f("columns[].values", "数组", "无", UI_OK, "表头筛选·按值"),
+            _f("columns[].blank", "布尔", "无（不筛空值）", UI_OK, "表头筛选·空值"),
+            _f("columns[].custom", "对象/数组", "无", UI_OK, "表头筛选·按条件"),
+        ],
+    },
+    {
+        "group": "conditionalFormats[] 条件格式",
+        "items": [
+            _f("sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("range", "'F3:F200'", "'A1'", UI_OK, "条件格式面板·作用范围"),
+            _f("stopIfTrue", "布尔", "false", UI_OK, "条件格式·若为真则停止"),
+            _f("rule", "对象", "必填", UI_OK, "条件格式·规则"),
+            _f("rule.type", "highlightCell|dataBar|colorScale|iconSet", "必填", UI_OK, "条件格式·规则类型"),
+            _f("rule.style", "内联样式（键同 styles）", "无（无格式变化）", UI_OK, "条件格式·格式"),
+        ],
+    },
+    {
+        "group": "notes[] 批注 / slashCells[] 斜线格",
+        "items": [
+            _f("notes[].sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("notes[].cell", "'D3'", "'A1'", UI_OK, "插入 → 批注"),
+            _f("notes[].text", "字符串", "''（空批注）", UI_OK, "批注框"),
+            _f("notes[].width / height", "整数(px)", "160 / 120", UI_OK, "拖拽批注框"),
+            _f("notes[].show", "布尔", "false（不常显，悬停显示）", UI_OK, "批注显示方式"),
+            _f("slashCells[].sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("slashCells[].cell", "'F1'", "'A1'", UI_OK, "功能区·斜线格"),
+            _f("slashCells[].type", "two|three", "two", UI_OK, "斜线格·二分/三分"),
+        ],
+    },
+    {
+        "group": "datasetTables[] 明细表",
+        "items": [
+            _f("sheet", "字符串", "第一个工作表", UI_OK, "—"),
+            _f("startCell", "'A7'", "'A1'", UI_OK, "插入后拖拽放置"),
+            _f("datasetId", "字符串", "必填", UI_OK, "明细表·数据集"),
+            _f("fields", "数组", "[]（空则报错）", UI_OK, "明细表·字段"),
+            _f("blockName", "字符串", "''（用默认块名）", UI_OK, "明细表·自定义块名"),
+            _f("resultLimit", "整数", "100", UI_OK, "明细表·结果条数上限", "服务端上限 100000，超出被截断"),
+            _f("hideHeader", "布尔", "false", UI_OK, "明细表·隐藏表头"),
+            _f("mergeCell", "布尔", "false", UI_OK, "明细表·合并单元格"),
+            _f("customFilter", "对象", "{}（不过滤）", UI_OK, "明细表·过滤条件"),
+            _f("queryFilter", "数组", "[]", UI_WARN, "由查询组件写入", "一般不要手填，交给 filterComponents"),
+        ],
+    },
+    {
+        "group": "filterComponents[] 查询组件",
+        "items": [
+            _f("sheet / startCell", "字符串", "第一个工作表 / 'A1'", UI_OK, "查询组件拖拽放置"),
+            _f("visible", "布尔", "true", UI_OK, "查询组件·显示"),
+            _f("conditions", "数组", "必填（非空，否则报错）", UI_OK, "查询组件·查询条件"),
+            _f("conditions[].name", "字符串", "取 fieldName", UI_OK, "条件·显示名"),
+            _f("conditions[].fieldId / fieldName", "字符串", "必填", UI_OK, "条件·绑定字段"),
+            _f("conditions[].displayType", "time|textSelect|numberRange…", "有 granularity → time，否则 textSelect", UI_OK, "条件·类型"),
+            _f("conditions[].granularity", "year|month|date|datetime", "date（仅 displayType=time）", UI_OK, "条件·时间粒度"),
+            _f("conditions[].optionSource", "auto|…", "auto", UI_OK, "条件·选项来源"),
+            _f("conditions[].required", "布尔", "false", UI_OK, "条件·必填"),
+            _f("conditions[].multiple", "布尔", "false", UI_OK, "条件·多选"),
+            _f("conditions[].visible", "布尔", "true", UI_OK, "条件·显示"),
+            _f("conditions[].linkPlugin", "blockName / 块 id", "无（关联全部明细表）", UI_OK, "条件·关联范围"),
+            _f("（样式）base.padding / gap", "整数(px)", "16 / 16", UI_OK, "样式面板"),
+            _f("（样式）base.layout / align", "字符串", "horizontal / left", UI_OK, "样式面板"),
+            _f("（样式）condition.color / fontSize", "字符串 / 整数", "#1f2329 / 12", UI_OK, "样式面板"),
+            _f("（样式）conditionName.show / position", "布尔 / 字符串", "true / top", UI_OK, "样式面板"),
+            _f("（样式）button.btnList", "数组", "['sure']", UI_OK, "样式面板·按钮"),
+            _f("（样式）button.primaryColor", "#RRGGBB", "#3370ff", UI_OK, "样式面板·按钮颜色"),
+        ],
+    },
+    {
+        "group": "固定值（不可配，写出即为下列值）",
+        "items": [
+            _f("workbook.id / name / locale", "字符串", "workbook-01 / Workbook / zhCN", UI_NONE, "—"),
+            _f("sheet.zoomRatio / scrollTop / scrollLeft", "数字", "1 / 0 / 0", UI_OK, "视图缩放与滚动（用户可改，不持久）"),
+            _f("sheet.selections", "数组", "['A1']", UI_OK, "当前选区"),
+            _f("sheet.rowHeader", "对象", "{width:46, hidden:0}", UI_OK, "行头宽度"), 
+            _f("sheet.columnHeader", "对象", "{height:20, hidden:0}", UI_OK, "列头高度"),
+        ],
+    },
+]
+
+
+def cmd_defaults(_client: Optional[DataEaseClient], args: argparse.Namespace) -> int:
+    """输出规格各项的类型 / 默认值 / 界面位置 / 可达性（离线）。"""
+    groups = SPEC_SCHEMA
+    kw = (getattr(args, "key", None) or "").strip().lower()
+    if kw:
+        groups = [
+            {"group": g["group"], "items": [i for i in g["items"] if kw in i["key"].lower()]}
+            for g in groups
+        ]
+        groups = [g for g in groups if g["items"]]
+    if args.output_json:
+        _print_json(groups)
+        return 0
+    if getattr(args, "markdown", False):
+        print("# 电子表格规格默认值全表\n")
+        print("> 本文件由 `python spreadsheet.py defaults --markdown` 生成，请勿手改；")
+        print("> 与代码不一致时以命令输出为准。\n")
+        print("**档位**：✅ 界面可编辑 · ⚠️ 界面受限 · ⛔ 界面无入口（写入后用户无法在界面改回）\n")
+        for g in groups:
+            print(f"## {g['group']}\n")
+            print("| 键 | 类型 | 默认值 | 界面位置 | 可达性 | 说明 |")
+            print("|----|------|--------|----------|--------|------|")
+            for it in g["items"]:
+                def esc(s: str) -> str:
+                    return str(s).replace("|", "\\|") or "—"
+
+                print(
+                    f"| `{it['key']}` | {esc(it['type'])} | {esc(it['default'])} | {esc(it['uiWhere'])} "
+                    f"| {UI_MARK[it['ui']]} {UI_LABEL[it['ui']]} | {esc(it['note'])} |"
+                )
+            print()
+        return 0
+    if not groups:
+        print(f"未找到匹配 {kw!r} 的键。")
+        return 1
+    for g in groups:
+        print(f"\n== {g['group']} ==")
+        for it in g["items"]:
+            print(f"  {it['key']}")
+            print(f"      类型: {it['type']}")
+            print(f"      默认: {it['default']}")
+            print(f"      界面: {UI_MARK[it['ui']]} {UI_LABEL[it['ui']]} · {it['uiWhere']}")
+            if it["note"]:
+                print(f"      说明: {it['note']}")
+    print("\n提示：✅ 界面可编辑 / ⚠️ 界面受限 / ⛔ 界面无入口（写入后用户无法在界面改回）")
+    return 0
+
+
+def cmd_lint(_client: Optional[DataEaseClient], args: argparse.Namespace) -> int:
+    """离线自检：编译规格并输出界面一致性 / 结构风险。"""
+    spec = _load_json(args.json, args.file)
+    if spec is None:
+        raise DataEaseClientError("请用 --file 或 --json 提供规格")
+    issues = lint_spec(spec)
+    counts = {lv: sum(1 for x in issues if x["level"] == lv) for lv in ("error", "warn", "info")}
+    if args.output_json:
+        _print_json(
+            {
+                "ok": counts["error"] == 0,
+                "counts": counts,
+                "issues": issues,
+            }
+        )
+        return 1 if counts["error"] else 0
+
+    icons = {"error": "✗", "warn": "!", "info": "i"}
+    if not issues:
+        print("自检通过：未发现界面一致性或结构风险。")
+        return 0
+    for it in issues:
+        print(f"[{icons[it['level']]}] {it['code']}: {it['msg']}")
+        if it["hint"]:
+            print(f"      → {it['hint']}")
+    print()
+    print(f"合计：error {counts['error']} / warn {counts['warn']} / info {counts['info']}")
+    if counts["error"]:
+        print("存在 error：修正后再 create / edit。")
+        return 1
+    print("无 error：可以继续；warn 项建议逐条确认。")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # 命令
 # ---------------------------------------------------------------------------
 
@@ -975,6 +1499,24 @@ def _resolve_workbook_payload(args: argparse.Namespace) -> str:
         if not isinstance(spec, dict) or not spec.get("sheets"):
             raise DataEaseClientError("--raw 模式要求完整 Univer 工作簿 JSON（含 sheets）")
         return json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
+    # 结构守卫：把这些状态写进去后界面既看不到也改不回来，必须在这里拦死。
+    issues = lint_spec(spec)
+    errors = [x for x in issues if x["level"] == "error"]
+    warns = [x for x in issues if x["level"] == "warn"]
+    if errors and not getattr(args, "allow_lint_errors", False):
+        detail = "\n".join(
+            f"  - [{x['code']}] {x['msg']}" + (f"\n      → {x['hint']}" if x["hint"] else "")
+            for x in errors
+        )
+        raise DataEaseClientError(
+            "规格未通过自检，已阻止写入（下列状态界面不会产生，写入后用户无法在界面修复）：\n"
+            f"{detail}\n"
+            "修正后重试；如确需写入，加 --allow-lint-errors（不推荐，交付时须向用户说明）。"
+        )
+    if warns:
+        print(f"自检提示：{len(warns)} 项需留意（不阻断写入）", file=sys.stderr)
+        for x in warns:
+            print(f"  ! [{x['code']}] {x['msg']}", file=sys.stderr)
     return json.dumps(compile_workbook(spec), ensure_ascii=False, separators=(",", ":"))
 
 
@@ -1126,10 +1668,11 @@ def cmd_template(client: DataEaseClient, args: argparse.Namespace) -> None:
             }
         ],
         "filters": [
+            # 默认只给范围：表头出现筛选按钮，由使用者自行勾选。
+            # 预置 columns 条件会让表格一打开就处于已筛选态，容易被误判为"数据缺失"。
             {
                 "sheet": "销售明细",
                 "range": "A3:F200",
-                "columns": [{"col": "F", "values": ["已结算", "待结算"]}],
             }
         ],
         "notes": [
@@ -1171,6 +1714,11 @@ def build_parser() -> argparse.ArgumentParser:
     cr.add_argument("--file", help="规格 JSON 文件（或 --raw 时为完整工作簿 JSON）")
     cr.add_argument("--json", help="规格 JSON 字符串")
     cr.add_argument("--raw", action="store_true", help="--file/--json 为完整 Univer 工作簿 JSON，直接使用")
+    cr.add_argument(
+        "--allow-lint-errors",
+        action="store_true",
+        help="跳过自检拦截（不推荐；仅在已确认这些状态确有必要时使用）",
+    )
     cr.add_argument("--remark", default=None)
     cr.set_defaults(func=cmd_create)
 
@@ -1180,6 +1728,11 @@ def build_parser() -> argparse.ArgumentParser:
     ed.add_argument("--file", help="新规格 JSON 文件（整表替换）")
     ed.add_argument("--json", help="新规格 JSON 字符串")
     ed.add_argument("--raw", action="store_true", help="--file/--json 为完整 Univer 工作簿 JSON")
+    ed.add_argument(
+        "--allow-lint-errors",
+        action="store_true",
+        help="跳过自检拦截（不推荐；仅在已确认这些状态确有必要时使用）",
+    )
     ed.add_argument(
         "--session-created",
         action="store_true",
@@ -1200,6 +1753,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tp.set_defaults(func=cmd_template)
 
+    ln = sub.add_parser(
+        "lint",
+        help="离线自检规格：查界面一致性（界面不会产生的状态）与结构风险，不写数据",
+    )
+    ln.add_argument("--file", help="规格 JSON 文件")
+    ln.add_argument("--json", help="规格 JSON 字符串")
+    ln.add_argument("--output-json", action="store_true", help="以 JSON 输出，便于程序判定")
+    ln.set_defaults(func=cmd_lint)
+
+    df = sub.add_parser(
+        "defaults",
+        help="离线查询各项的类型 / 默认值 / 界面位置 / 可达性（不确定默认值时先查这里）",
+    )
+    df.add_argument("--key", default=None, help="按关键字过滤，如 --key rowCount")
+    df.add_argument("--output-json", action="store_true", help="以 JSON 输出")
+    df.add_argument("--markdown", action="store_true", help="以 Markdown 表格输出（用于生成参考文档）")
+    df.set_defaults(func=cmd_defaults)
+
     return p
 
 
@@ -1207,12 +1778,12 @@ def main(argv: Optional[list] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        # template 为纯本地命令，无需连接配置
-        if args.func.__name__ == "cmd_template":
-            args.func(None, args)
+        # template / lint / defaults 为纯本地命令，无需连接配置
+        if args.func.__name__ in ("cmd_template", "cmd_lint", "cmd_defaults"):
+            rc = args.func(None, args)
         else:
-            args.func(DataEaseClient(), args)
-        return 0
+            rc = args.func(DataEaseClient(), args)
+        return rc or 0
     except DataEaseClientError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

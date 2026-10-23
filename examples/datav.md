@@ -45,7 +45,7 @@ python datav.py publish --id <DV_ID> --i-confirm-publish
 ## 空屏 + 追加
 
 ```bash
-python datav.py create-empty --name "联调大屏" --folder-name "目标文件夹"
+python datav.py create-empty --name "示例大屏" --folder-name "目标文件夹"
 python datav.py apply --id <DV_ID> --file plan_charts.json --append
 ```
 
@@ -55,7 +55,7 @@ python datav.py apply --id <DV_ID> --file plan_charts.json --append
 
 ```json
 {
-  "name": "媒体联调大屏",
+  "name": "媒体大屏示例",
   "folderName": "目标文件夹",
   "layout": "grid_3x4",
   "datasetId": "<DATASET_ID>",

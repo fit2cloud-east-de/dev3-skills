@@ -15,6 +15,27 @@ python spreadsheet.py template --theme business > spec.json   # 可选 finance /
 
 样板已含五段式版式（标题区/表头/数据区/合计/辅注）、公式、斑马纹、下拉、筛选、批注与条件格式，改内容即可用。
 
+## 生成前自检（离线，不写数据）
+
+```bash
+python spreadsheet.py lint --file spec.json          # 人读输出；有 error 退出码 1
+python spreadsheet.py lint --file spec.json --output-json   # 机器判定
+```
+
+拦的是「界面不会产生的状态」——合并区内残留值、重叠合并、界面无入口的强制值类型 / 从右到左、明细表取数上限越界等，详见 [references/spreadsheet_parity.md](../references/spreadsheet_parity.md)。
+
+`create` / `edit` 内置同一守卫：`error` 级会直接拒绝写入（可用 `--allow-lint-errors` 绕过，不推荐）。`lint` 的作用是写入前一次性看全 `warn` 项。
+
+## 查默认值（离线）
+
+```bash
+python spreadsheet.py defaults                       # 全量 105 项：类型 / 默认值 / 界面位置 / 可达性
+python spreadsheet.py defaults --key rowCount        # 单项
+python spreadsheet.py defaults --output-json         # 程序处理
+```
+
+不确定某项默认值时先查这里，不要凭印象填。全量表见 [references/spreadsheet_defaults.md](../references/spreadsheet_defaults.md)。
+
 ## 新建（主题 + 多 sheet + 公式 + 条件格式 + 验证 + 筛选 + 批注）
 
 ```json
